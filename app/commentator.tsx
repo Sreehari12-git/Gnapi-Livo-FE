@@ -1,0 +1,239 @@
+import { View, Text, Pressable, TextInput, ScrollView } from 'react-native'
+import { useState } from 'react'
+import { useRouter } from 'expo-router'
+import {
+  ChevronLeft,
+  Mic,
+  MicOff,
+  Circle,
+  Square,
+} from 'lucide-react-native'
+import EventIdGate from './Eventidgate'
+
+export default function Commentator() {
+  const router = useRouter()
+  const [eventId, setEventId] = useState<string | null>(null)
+  const [identity, setIdentity] = useState('comm-jc2o4g')
+  const [displayName, setDisplayName] = useState('Commentator')
+  const [room, setRoom] = useState('live-switch')
+  const [isLive, setIsLive] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [micLevel, setMicLevel] = useState(0)
+
+  if (!eventId) {
+    return (
+      <EventIdGate
+        title="Commentator"
+        subtitle="Enter the event ID to join the commentary booth."
+        accentIcon={<Mic size={20} color="#c084fc" />}
+        accentBg="bg-purple-500/20"
+        accentBorder="border-purple-500/40"
+        onSubmit={(id) => {
+          setEventId(id)
+          setRoom(id) 
+        }}
+      />
+    )
+  }
+
+  return (
+    <ScrollView
+      className="flex-1 bg-slate-950"
+      contentContainerStyle={{ paddingBottom: 48 }}
+      showsVerticalScrollIndicator={false}
+    >
+
+      <View className="bg-emerald-900 px-6 pt-14 pb-6">
+        <Pressable
+          onPress={() => router.back()}
+          className="flex-row items-center gap-2 mb-6"
+        >
+          <ChevronLeft size={18} color="rgba(255,255,255,0.6)" />
+          <Text className="text-white/60 text-sm font-medium">Back to dashboard</Text>
+        </Pressable>
+
+        <View className="flex-row items-center gap-3 mb-1">
+          <View className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 items-center justify-center">
+            <Mic size={20} color="#c084fc" />
+          </View>
+          <Text className="text-white text-3xl font-black">Commentator</Text>
+        </View>
+        <Text className="text-white/50 text-sm ml-1 leading-relaxed mt-1">
+          Send your live commentary audio into the room.{'\n'}The broadcaster picks which commentator viewers hear.
+        </Text>
+      </View>
+
+      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+        <View className="flex-row items-center gap-1.5">
+          <Mic size={12} color="#022c22" strokeWidth={2.75} />
+          <Text className="text-emerald-950 font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
+        </View>
+        <View className="flex-row items-center gap-1">
+          <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-slate-600'}`} />
+          <Text className="text-emerald-950 font-black text-xs">
+            {isLive ? (isMuted ? 'MUTED' : 'ON AIR') : 'IDLE'}
+          </Text>
+        </View>
+      </View>
+
+      <View className="px-6 mt-4">
+        <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-white/10 self-start">
+          <Text className="text-white/40 text-xs">Event</Text>
+          <Text className="text-white/70 text-xs font-bold">{eventId}</Text>
+        </View>
+      </View>
+
+      <View className="px-6 mt-4 gap-4">
+
+        <View className="flex-row gap-3">
+          <View className="flex-1">
+            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Identity</Text>
+            <TextInput
+              value={identity}
+              onChangeText={setIdentity}
+              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder="comm-identity"
+            />
+          </View>
+          <View className="flex-1">
+            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Display name</Text>
+            <TextInput
+              value={displayName}
+              onChangeText={setDisplayName}
+              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder="Your name"
+            />
+          </View>
+          <View className="flex-1">
+            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Room</Text>
+            <TextInput
+              value={room}
+              onChangeText={setRoom}
+              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder="room-name"
+            />
+          </View>
+        </View>
+
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => {
+              setIsLive(!isLive)
+              setIsMuted(false)         
+              setMicLevel(isLive ? 0 : 72)
+            }}
+            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
+          >
+            {isLive ? (
+              <Square size={14} color="#ffffff" fill="#ffffff" />
+            ) : (
+              <Circle size={14} color="#dc2626" fill="#dc2626" />
+            )}
+            <Text className={`font-black text-sm ${isLive ? 'text-white' : 'text-slate-900'}`}>
+              {isLive ? 'Stop' : 'Go Live'}
+            </Text>
+          </Pressable>
+
+          {isLive && (
+            <Pressable
+              onPress={() => {
+                setIsMuted(!isMuted)
+                setMicLevel(isMuted ? 72 : 0)  
+              }}
+              className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
+                isMuted
+                  ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
+                  : 'bg-slate-800 border-white/15 active:bg-slate-700'
+              }`}
+            >
+              {isMuted ? (
+                <MicOff size={15} color="#fb923c" />
+              ) : (
+                <Mic size={15} color="rgba(255,255,255,0.7)" />
+              )}
+              <Text className={`font-bold text-sm ${isMuted ? 'text-orange-400' : 'text-white/70'}`}>
+                {isMuted ? 'Unmute' : 'Mute'}
+              </Text>
+            </Pressable>
+          )}
+
+          <View className="flex-row items-center gap-2 px-3 py-2 rounded-full bg-slate-800 border border-white/10">
+            <View className={`w-2 h-2 rounded-full ${
+              isLive && !isMuted ? 'bg-red-500' :
+              isLive && isMuted  ? 'bg-orange-400' :
+              'bg-slate-500'
+            }`} />
+            <Text className="text-white/40 text-xs">
+              {isLive ? (isMuted ? 'muted' : 'on air') : 'idle'}
+            </Text>
+          </View>
+        </View>
+
+        <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-white/60 text-sm font-semibold">Mic level</Text>
+            {isMuted ? (
+              <View className="flex-row items-center gap-1.5">
+                <MicOff size={13} color="rgba(255,255,255,0.4)" />
+                <Text className="text-white/40 text-sm">Muted</Text>
+              </View>
+            ) : (
+              <Text className="text-white/40 text-sm">{micLevel}%</Text>
+            )}
+          </View>
+          <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
+            <View
+              className={`h-2 rounded-full ${
+                isMuted ? 'bg-orange-400' :
+                micLevel > 80 ? 'bg-red-500' :
+                micLevel > 40 ? 'bg-yellow-400' :
+                'bg-emerald-500'
+              }`}
+              style={{ width: `${micLevel}%` }}
+            />
+          </View>
+          <View className="flex-row justify-between mt-2">
+            <Text className="text-white/20 text-xs">0%</Text>
+            <Text className="text-white/20 text-xs">50%</Text>
+            <Text className="text-white/20 text-xs">100%</Text>
+          </View>
+        </View>
+
+        <View className="flex-row gap-3">
+          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Room</Text>
+            <Text className="text-white font-bold text-sm">{room || '—'}</Text>
+          </View>
+          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Name</Text>
+            <Text className="text-white font-bold text-sm">{displayName || '—'}</Text>
+          </View>
+          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Status</Text>
+            <View className="flex-row items-center gap-1.5">
+              {isLive && isMuted && <MicOff size={13} color="#fb923c" />}
+              {isLive && !isMuted && (
+                <Circle size={9} color="#f87171" fill="#f87171" />
+              )}
+              {!isLive && (
+                <Circle size={9} color="rgba(255,255,255,0.4)" fill="rgba(255,255,255,0.4)" />
+              )}
+              <Text className={`font-bold text-sm ${
+                isLive && !isMuted ? 'text-red-400' :
+                isLive && isMuted  ? 'text-orange-400' :
+                'text-white/40'
+              }`}>
+                {isLive ? (isMuted ? 'Muted' : 'On Air') : 'Idle'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+      </View>
+    </ScrollView>
+  )
+}
+
