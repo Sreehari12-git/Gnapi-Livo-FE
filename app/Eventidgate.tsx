@@ -49,7 +49,7 @@ export default function EventIdGate({
 
   return (
     <View className="flex-1 bg-slate-950">
-      <View className="bg-emerald-900 px-6 pt-14 pb-6">
+      <View className="bg-[#0A0E16] px-6 pt-14 pb-6">
         <View className="flex-row items-center gap-3 mb-1">
           <View className={`w-10 h-10 rounded-xl ${accentBg} border ${accentBorder} items-center justify-center`}>
             {accentIcon}
@@ -59,12 +59,12 @@ export default function EventIdGate({
         <Text className="text-white/50 text-sm ml-1 mt-1">{subtitle}</Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+      <View className="bg-orange-500 px-6 py-2 flex-row justify-between items-center">
         <View className="flex-row items-center gap-1.5">
-          <KeyRound size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">EVENT ACCESS</Text>
+          <KeyRound size={12} color="#0A0E16" strokeWidth={2.75} />
+          <Text className="text-[#0A0E16] font-black text-xs tracking-wider">EVENT ACCESS</Text>
         </View>
-        <Text className="text-emerald-950 font-black text-xs">EVENT ID REQUIRED</Text>
+        <Text className="text-[#0A0E16] font-black text-xs">EVENT ID REQUIRED</Text>
       </View>
 
       <View className="px-6 mt-8 flex-1">

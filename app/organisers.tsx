@@ -1,5 +1,5 @@
 import { View, Text, Pressable, TextInput, ScrollView } from 'react-native'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'expo-router'
 import {
   ChevronLeft,
@@ -12,6 +12,7 @@ import {
   Circle,
   Square,
   Lock,
+  LogOut,
   AlertTriangle,
   Eye,
   EyeOff,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react-native'
 import { adminLogin } from './services/auth'
 import EventIdGate from './Eventidgate'
+import * as SecureStore from 'expo-secure-store'
 
 type TabKey = 'capturer' | 'commentator' | 'broadcaster' | 'admin'
 
@@ -47,12 +49,16 @@ const TABS: Tab[] = [
   { key: 'admin', label: 'Admin', Icon: ShieldCheck },
 ]
 
-function CapturerPanel() {
+function CapturerPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => void } = {}) {
   const [eventId, setEventId] = useState<string | null>(null)
   const [identity, setIdentity] = useState('cam-aldmmy')
   const [room, setRoom] = useState('live-switch')
   const [isLive, setIsLive] = useState(false)
   const [camera, setCamera] = useState<'front' | 'back'>('front')
+
+  useEffect(() => {
+    onLiveChange?.(isLive)
+  }, [isLive, onLiveChange])
 
   if (!eventId) {
     return (
@@ -72,7 +78,7 @@ function CapturerPanel() {
 
   return (
     <View>
-      <View className="bg-emerald-900 px-6 pt-6 pb-6">
+      <View className="bg-[#0A0E16] px-6 pt-6 pb-6">
         <Pressable
           onPress={() => setEventId(null)}
           className="flex-row items-center gap-1.5 mb-4 self-start active:opacity-60"
@@ -82,8 +88,8 @@ function CapturerPanel() {
         </Pressable>
 
         <View className="flex-row items-center gap-3 mb-1">
-          <View className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 items-center justify-center">
-            <Video size={20} color="#60a5fa" />
+          <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
+            <Video size={20} color="#fb923c" />
           </View>
           <Text className="text-white text-3xl font-black">Capturer</Text>
         </View>
@@ -92,14 +98,14 @@ function CapturerPanel() {
         </Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+      <View className="bg-orange-500 px-6 py-2 flex-row justify-between items-center">
         <View className="flex-row items-center gap-1.5">
-          <Radio size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">CAPTURE STATION</Text>
+          <Radio size={12} color="#0A0E16" strokeWidth={2.75} />
+          <Text className="text-[#0A0E16] font-black text-xs tracking-wider">CAPTURE STATION</Text>
         </View>
         <View className="flex-row items-center gap-1">
           <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-slate-600'}`} />
-          <Text className="text-emerald-950 font-black text-xs">
+          <Text className="text-[#0A0E16] font-black text-xs">
             {isLive ? 'STREAMING' : 'IDLE'} · {camera.toUpperCase()}
           </Text>
         </View>
@@ -222,7 +228,7 @@ function CapturerPanel() {
   )
 }
 
-function CommentatorPanel() {
+function CommentatorPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => void } = {}) {
   const [eventId, setEventId] = useState<string | null>(null)
   const [identity, setIdentity] = useState('comm-jc2o4g')
   const [displayName, setDisplayName] = useState('Commentator')
@@ -230,6 +236,10 @@ function CommentatorPanel() {
   const [isLive, setIsLive] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [micLevel, setMicLevel] = useState(0)
+
+  useEffect(() => {
+    onLiveChange?.(isLive)
+  }, [isLive, onLiveChange])
 
   if (!eventId) {
     return (
@@ -249,7 +259,7 @@ function CommentatorPanel() {
 
   return (
     <View>
-      <View className="bg-emerald-900 px-6 pt-6 pb-6">
+      <View className="bg-[#0A0E16] px-6 pt-6 pb-6">
         <Pressable
           onPress={() => setEventId(null)}
           className="flex-row items-center gap-1.5 mb-4 self-start active:opacity-60"
@@ -259,8 +269,8 @@ function CommentatorPanel() {
         </Pressable>
 
         <View className="flex-row items-center gap-3 mb-1">
-          <View className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 items-center justify-center">
-            <Mic size={20} color="#c084fc" />
+          <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
+            <Mic size={20} color="#fb923c" />
           </View>
           <Text className="text-white text-3xl font-black">Commentator</Text>
         </View>
@@ -269,14 +279,14 @@ function CommentatorPanel() {
         </Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+      <View className="bg-orange-500 px-6 py-2 flex-row justify-between items-center">
         <View className="flex-row items-center gap-1.5">
-          <Mic size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
+          <Mic size={12} color="#0A0E16" strokeWidth={2.75} />
+          <Text className="text-[#0A0E16] font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
         </View>
         <View className="flex-row items-center gap-1">
           <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-slate-600'}`} />
-          <Text className="text-emerald-950 font-black text-xs">
+          <Text className="text-[#0A0E16] font-black text-xs">
             {isLive ? (isMuted ? 'MUTED' : 'ON AIR') : 'IDLE'}
           </Text>
         </View>
@@ -522,7 +532,7 @@ const createMatch = (id: number, sport: Sport, sportMatchNumber: number): MatchS
 })
 
 
-function BroadcasterPanel() {
+function BroadcasterPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => void } = {}) {
   const [eventId, setEventId] = useState<string | null>(null)
 
   const [identity, setIdentity] = useState('bcast-8x585u')
@@ -531,6 +541,10 @@ function BroadcasterPanel() {
   const [selectedSport, setSelectedSport] = useState<Sport>('badminton')
   const [matches, setMatches] = useState<MatchState[]>([])
   const [nextId, setNextId] = useState(1)
+
+  useEffect(() => {
+    onLiveChange?.(isJoined)
+  }, [isJoined, onLiveChange])
 
   const [sportCounters, setSportCounters] = useState<Record<Sport, number>>({
     pickleball: 0,
@@ -702,7 +716,7 @@ function BroadcasterPanel() {
 
   return (
     <View>
-      <View className="bg-emerald-900 px-6 pt-6 pb-6">
+      <View className="bg-[#0A0E16] px-6 pt-6 pb-6">
         <Pressable
           onPress={() => setEventId(null)}
           className="flex-row items-center gap-1.5 mb-4 self-start active:opacity-60"
@@ -712,8 +726,8 @@ function BroadcasterPanel() {
         </Pressable>
 
         <View className="flex-row items-center gap-3 mb-1">
-          <View className="w-10 h-10 rounded-xl bg-yellow-400/20 border border-yellow-400/40 items-center justify-center">
-            <Radio size={20} color="#facc15" />
+          <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
+            <Radio size={20} color="#fb923c" />
           </View>
           <Text className="text-white text-3xl font-black">Broadcaster</Text>
         </View>
@@ -722,14 +736,14 @@ function BroadcasterPanel() {
         </Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+      <View className="bg-orange-500 px-6 py-2 flex-row justify-between items-center">
         <View className="flex-row items-center gap-1.5">
-          <Radio size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">DIRECTOR CONSOLE</Text>
+          <Radio size={12} color="#0A0E16" strokeWidth={2.75} />
+          <Text className="text-[#0A0E16] font-black text-xs tracking-wider">DIRECTOR CONSOLE</Text>
         </View>
         <View className="flex-row items-center gap-1">
           <View className={`w-2 h-2 rounded-full ${isJoined ? 'bg-red-600' : 'bg-slate-600'}`} />
-          <Text className="text-emerald-950 font-black text-xs">
+          <Text className="text-[#0A0E16] font-black text-xs">
             {isJoined ? 'CONNECTED' : 'IDLE'}
           </Text>
         </View>
@@ -1299,7 +1313,9 @@ function AdminPanel() {
 
     try {
       const data = await adminLogin(email, password);
-
+      await SecureStore.setItemAsync('accessToken', data.accessToken);
+      await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+      await SecureStore.setItemAsync('adminId', data.user.id.toString());
       router.replace("/adminDashboard");
     } catch (error: any) {
       if (error.response?.data?.message) {
@@ -1314,7 +1330,7 @@ function AdminPanel() {
 
   return (
     <View>
-      <View className="bg-emerald-900 px-6 pt-6 pb-6">
+      <View className="bg-[#0A0E16] px-6 pt-6 pb-6">
         <View className="flex-row items-center gap-3 mb-1">
           <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
             <ShieldCheck size={20} color="#fb923c" />
@@ -1326,12 +1342,12 @@ function AdminPanel() {
         </Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+      <View className="bg-orange-500 px-6 py-2 flex-row justify-between items-center">
         <View className="flex-row items-center gap-1.5">
-          <Lock size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">RESTRICTED AREA</Text>
+          <Lock size={12} color="#0A0E16" strokeWidth={2.75} />
+          <Text className="text-[#0A0E16] font-black text-xs tracking-wider">RESTRICTED AREA</Text>
         </View>
-        <Text className="text-emerald-950 font-black text-xs">CREDENTIALS REQUIRED</Text>
+        <Text className="text-[#0A0E16] font-black text-xs">CREDENTIALS REQUIRED</Text>
       </View>
 
       <View className="px-6 mt-8">
@@ -1424,9 +1440,27 @@ function AdminPanel() {
 
 export default function Organisers() {
   const [activeTab, setActiveTab] = useState<TabKey>('capturer')
+  const [isAnyLive, setIsAnyLive] = useState(false)
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    await SecureStore.deleteItemAsync('accessToken')
+    await SecureStore.deleteItemAsync('refreshToken')
+    await SecureStore.deleteItemAsync('adminId')
+    router.replace('/')
+  }
 
   return (
     <View className="flex-1 bg-slate-950">
+      <View className="absolute top-6 right-6 z-50">
+        <Pressable
+          onPress={handleLogout}
+          className="flex-row items-center gap-1.5 bg-[#0A0E16] px-3 py-2 rounded-full border border-white/10 active:opacity-60"
+        >
+          <LogOut size={14} color="#fb923c" />
+          <Text className="text-orange-500 text-xs font-bold tracking-wide">Logout</Text>
+        </Pressable>
+      </View>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -1434,13 +1468,13 @@ export default function Organisers() {
       >
 
         <View style={{ display: activeTab === 'capturer' ? 'flex' : 'none' }}>
-          <CapturerPanel />
+          <CapturerPanel onLiveChange={setIsAnyLive} />
         </View>
         <View style={{ display: activeTab === 'commentator' ? 'flex' : 'none' }}>
-          <CommentatorPanel />
+          <CommentatorPanel onLiveChange={setIsAnyLive} />
         </View>
         <View style={{ display: activeTab === 'broadcaster' ? 'flex' : 'none' }}>
-          <BroadcasterPanel />
+          <BroadcasterPanel onLiveChange={setIsAnyLive} />
         </View>
         {activeTab === 'admin' && <AdminPanel />}
       </ScrollView>
@@ -1453,8 +1487,11 @@ export default function Organisers() {
             return (
               <Pressable
                 key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                className="flex-1 items-center py-1.5 active:opacity-60"
+                onPress={() => {
+                  if (!isAnyLive || isActive) setActiveTab(tab.key)
+                }}
+                disabled={isAnyLive && !isActive}
+                className={`flex-1 items-center py-1.5 active:opacity-60 ${isAnyLive && !isActive ? 'opacity-30' : ''}`}
               >
                 <View
                   className={`w-10 h-10 rounded-xl items-center justify-center mb-1 ${

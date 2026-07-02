@@ -13,20 +13,20 @@ export default function LiveMatches() {
 
   return (
     <ScrollView
-      className="flex-1 bg-emerald-950"
+      className="flex-1 bg-[#0A0E16]"
       contentContainerStyle={{ paddingBottom: 48 }}
       showsVerticalScrollIndicator={false}
     >
       <View className="px-6 pt-14">
-        <View className="self-start flex-row items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-900/60 border border-yellow-400/40 mb-5">
-          <Radio size={13} color="#facc15" />
-          <Text className="text-yellow-400 font-black text-xs tracking-widest">
+        <View className="self-start flex-row items-center gap-2 px-4 py-1.5 rounded-full bg-orange-500/20 border border-orange-500/40 mb-5">
+          <Radio size={13} color="#fb923c" />
+          <Text className="text-orange-500 font-black text-xs tracking-widest">
             BADMINTON LIVE
           </Text>
         </View>
 
         <Text className="text-white text-4xl font-black">Match Viewer</Text>
-        <Text className="text-emerald-200/70 text-sm mt-2">
+        <Text className="text-white/70 text-sm mt-2">
           Pick a live match and watch with optional commentary.
         </Text>
       </View>

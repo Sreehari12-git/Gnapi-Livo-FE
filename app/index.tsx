@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useRouter, type Href } from 'expo-router'
 import { Search, Plus, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight } from 'lucide-react-native'
 import { controlPanelLogin } from './services/auth'
+import * as SecureStore from 'expo-secure-store'
 
 type Match = {
   id: string
@@ -390,6 +391,9 @@ function ControlPanelScreen() {
     setLoading(true)
     try {
       const data = await controlPanelLogin(email,password);
+      await SecureStore.setItemAsync('accessToken', data.accessToken);
+      await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+      await SecureStore.setItemAsync('controlPanelId', data.user.id.toString());
       router.push('/organisers')
     }  catch (error: any) {
         if (error.response) {

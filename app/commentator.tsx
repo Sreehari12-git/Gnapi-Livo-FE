@@ -43,7 +43,7 @@ export default function Commentator() {
       showsVerticalScrollIndicator={false}
     >
 
-      <View className="bg-emerald-900 px-6 pt-14 pb-6">
+      <View className="bg-[#0A0E16] px-6 pt-14 pb-6">
         <Pressable
           onPress={() => router.back()}
           className="flex-row items-center gap-2 mb-6"
@@ -53,8 +53,8 @@ export default function Commentator() {
         </Pressable>
 
         <View className="flex-row items-center gap-3 mb-1">
-          <View className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 items-center justify-center">
-            <Mic size={20} color="#c084fc" />
+          <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
+            <Mic size={20} color="#fb923c" />
           </View>
           <Text className="text-white text-3xl font-black">Commentator</Text>
         </View>
@@ -63,14 +63,14 @@ export default function Commentator() {
         </Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
+      <View className="bg-orange-500 px-6 py-2 flex-row justify-between items-center">
         <View className="flex-row items-center gap-1.5">
-          <Mic size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
+          <Mic size={12} color="#0A0E16" strokeWidth={2.75} />
+          <Text className="text-[#0A0E16] font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
         </View>
         <View className="flex-row items-center gap-1">
-          <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-slate-600'}`} />
-          <Text className="text-emerald-950 font-black text-xs">
+          <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-[#0A0E16]'}`} />
+          <Text className="text-[#0A0E16] font-black text-xs">
             {isLive ? (isMuted ? 'MUTED' : 'ON AIR') : 'IDLE'}
           </Text>
         </View>
