@@ -12,10 +12,15 @@ export const createEvent = async (
   return response.data;
 };
 
-export const getAllEvents = async() => {
-    const response = await api.get("/event/all");
-    return response.data;
+export const getAllEvents = async () => {
+  const response = await api.get("/event/all");
+  return response.data;
 }
+
+export const getEventById = async (id: string) => {
+  const response = await api.get(`/event/${id}`);
+  return response.data;
+};
 
 export const updateEvent = async (id: string, name: string) => {
   const response = await api.patch(`/event/${id}`, {
@@ -25,9 +30,9 @@ export const updateEvent = async (id: string, name: string) => {
   return response.data;
 };
 
-export const deleteEvent = async(id: string) => {
-    const response = await api.delete(`/event/${id}`);
-    return response.data;
+export const deleteEvent = async (id: string) => {
+  const response = await api.delete(`/event/${id}`);
+  return response.data;
 }
 
 export const validateSession = async (
@@ -38,8 +43,6 @@ export const validateSession = async (
     adminId,
     eventId,
   });
-
   return response.data;
 };
-
 
