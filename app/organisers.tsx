@@ -1,5 +1,5 @@
-import { View, Text, Pressable, TextInput, ScrollView } from 'react-native'
-import { useState, useEffect } from 'react'
+import { View, Text, Pressable, TextInput, ScrollView, ActivityIndicator } from 'react-native'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'expo-router'
 import {
   ChevronLeft,
@@ -29,10 +29,22 @@ import {
   Trophy,
   Play,
   Pause,
+  Wifi,
+  WifiOff,
 } from 'lucide-react-native'
 import { adminLogin } from './services/auth'
 import EventIdGate from './Eventidgate'
 import * as SecureStore from 'expo-secure-store'
+import { getLiveKitToken } from './services/livekit'
+import {
+  Room,
+  RoomEvent,
+  Track,
+  Participant,
+  RemoteParticipant,
+  LocalParticipant,
+  DataPacket_Kind,
+} from '@livekit/react-native'
 
 type TabKey = 'capturer' | 'commentator' | 'broadcaster' | 'admin'
 
@@ -51,14 +63,65 @@ const TABS: Tab[] = [
 
 function CapturerPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => void } = {}) {
   const [eventId, setEventId] = useState<string | null>(null)
-  const [identity, setIdentity] = useState('cam-aldmmy')
-  const [room, setRoom] = useState('live-switch')
+  const [identity, setIdentity] = useState('capturer-cam1')
   const [isLive, setIsLive] = useState(false)
   const [camera, setCamera] = useState<'front' | 'back'>('front')
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const roomRef = useRef<Room | null>(null)
 
   useEffect(() => {
     onLiveChange?.(isLive)
   }, [isLive, onLiveChange])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { roomRef.current?.disconnect() }
+  }, [])
+
+  const goLive = async () => {
+    if (!eventId) return
+    setConnecting(true)
+    setError(null)
+    try {
+      const roomName = `event-${eventId}`
+      const { token, url } = await getLiveKitToken(identity, roomName, 'capturer')
+      const room = new Room()
+      roomRef.current = room
+      await room.connect(url, token)
+      // Enable camera + microphone
+      await room.localParticipant.setCameraEnabled(true)
+      await room.localParticipant.setMicrophoneEnabled(true)
+      setIsLive(true)
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to connect to LiveKit room')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const stopLive = async () => {
+    try {
+      await roomRef.current?.localParticipant?.setCameraEnabled(false)
+      await roomRef.current?.localParticipant?.setMicrophoneEnabled(false)
+      await roomRef.current?.disconnect()
+      roomRef.current = null
+    } finally {
+      setIsLive(false)
+    }
+  }
+
+  const switchCamera = async () => {
+    const next = camera === 'front' ? 'back' : 'front'
+    setCamera(next)
+    if (isLive && roomRef.current) {
+      const camTrack = roomRef.current.localParticipant.getTrack(Track.Source.Camera)
+      if (camTrack?.track) {
+        // @ts-ignore — switchCamera is available on mobile video tracks
+        await camTrack.track.switchCamera(next === 'back')
+      }
+    }
+  }
 
   if (!eventId) {
     return (
@@ -118,7 +181,7 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => voi
         </View>
       </View>
 
-      <View className="px-6 mt-4 gap-4">
+        {/* Identity input — only editable when not live */}
         <View className="flex-row gap-3">
           <View className="flex-1">
             <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">
@@ -127,43 +190,39 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => voi
             <TextInput
               value={identity}
               onChangeText={setIdentity}
+              editable={!isLive}
               className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
               placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="cam-identity"
-            />
-          </View>
-
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">
-              Room
-            </Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="room-name"
+              placeholder="capturer-cam1"
             />
           </View>
         </View>
 
+        {/* Error */}
+        {error && (
+          <Text className="text-red-400 text-xs font-medium">{error}</Text>
+        )}
+
         <View className="flex-row items-center gap-3 flex-wrap">
           <Pressable
-            onPress={() => setIsLive(!isLive)}
-            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
+            onPress={isLive ? stopLive : goLive}
+            disabled={connecting}
+            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl disabled:opacity-40 ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
           >
-            {isLive ? (
+            {connecting ? (
+              <ActivityIndicator color={isLive ? '#fff' : '#0A0E16'} size="small" />
+            ) : isLive ? (
               <Square size={14} color="#ffffff" fill="#ffffff" />
             ) : (
               <Circle size={14} color="#dc2626" fill="#dc2626" />
             )}
             <Text className={`font-black text-sm ${isLive ? 'text-white' : 'text-slate-900'}`}>
-              {isLive ? 'Stop' : 'Go Live'}
+              {connecting ? 'Connecting…' : isLive ? 'Stop' : 'Go Live'}
             </Text>
           </Pressable>
 
           <Pressable
-            onPress={() => setCamera(c => c === 'front' ? 'back' : 'front')}
+            onPress={switchCamera}
             className="flex-row items-center gap-2 px-4 py-3 rounded-xl border border-white/15 bg-slate-800 active:bg-slate-700"
           >
             <RefreshCw size={15} color="rgba(255,255,255,0.8)" />
@@ -230,16 +289,63 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => voi
 
 function CommentatorPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => void } = {}) {
   const [eventId, setEventId] = useState<string | null>(null)
-  const [identity, setIdentity] = useState('comm-jc2o4g')
-  const [displayName, setDisplayName] = useState('Commentator')
-  const [room, setRoom] = useState('live-switch')
+  const [identity, setIdentity] = useState('commentator-1')
   const [isLive, setIsLive] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [micLevel, setMicLevel] = useState(0)
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const roomRef = useRef<Room | null>(null)
 
   useEffect(() => {
     onLiveChange?.(isLive)
   }, [isLive, onLiveChange])
+
+  useEffect(() => {
+    return () => { roomRef.current?.disconnect() }
+  }, [])
+
+  const goLive = async () => {
+    if (!eventId) return
+    setConnecting(true)
+    setError(null)
+    try {
+      const roomName = `event-${eventId}`
+      const { token, url } = await getLiveKitToken(identity, roomName, 'commentator')
+      const room = new Room()
+      roomRef.current = room
+      await room.connect(url, token)
+      // Audio only — no camera for commentator
+      await room.localParticipant.setMicrophoneEnabled(true)
+      setIsLive(true)
+      setMicLevel(72)
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to connect to LiveKit room')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const stopLive = async () => {
+    try {
+      await roomRef.current?.localParticipant?.setMicrophoneEnabled(false)
+      await roomRef.current?.disconnect()
+      roomRef.current = null
+    } finally {
+      setIsLive(false)
+      setIsMuted(false)
+      setMicLevel(0)
+    }
+  }
+
+  const toggleMute = async () => {
+    if (!roomRef.current) return
+    const next = !isMuted
+    await roomRef.current.localParticipant.setMicrophoneEnabled(!next)
+    setIsMuted(next)
+    setMicLevel(next ? 0 : 72)
+  }
+
 
   if (!eventId) {
     return (
@@ -306,58 +412,39 @@ function CommentatorPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => 
             <TextInput
               value={identity}
               onChangeText={setIdentity}
+              editable={!isLive}
               className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
               placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="comm-identity"
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Display name</Text>
-            <TextInput
-              value={displayName}
-              onChangeText={setDisplayName}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="Your name"
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Room</Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="room-name"
+              placeholder="commentator-1"
             />
           </View>
         </View>
 
+        {error && (
+          <Text className="text-red-400 text-xs font-medium">{error}</Text>
+        )}
+
         <View className="flex-row items-center gap-3">
           <Pressable
-            onPress={() => {
-              setIsLive(!isLive)
-              setIsMuted(false)
-              setMicLevel(isLive ? 0 : 72)
-            }}
-            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
+            onPress={isLive ? stopLive : goLive}
+            disabled={connecting}
+            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl disabled:opacity-40 ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
           >
-            {isLive ? (
+            {connecting ? (
+              <ActivityIndicator color={isLive ? '#fff' : '#0A0E16'} size="small" />
+            ) : isLive ? (
               <Square size={14} color="#ffffff" fill="#ffffff" />
             ) : (
               <Circle size={14} color="#dc2626" fill="#dc2626" />
             )}
             <Text className={`font-black text-sm ${isLive ? 'text-white' : 'text-slate-900'}`}>
-              {isLive ? 'Stop' : 'Go Live'}
+              {connecting ? 'Connecting…' : isLive ? 'Stop' : 'Go Live'}
             </Text>
           </Pressable>
 
           {isLive && (
             <Pressable
-              onPress={() => {
-                setIsMuted(!isMuted)
-                setMicLevel(isMuted ? 72 : 0)
-              }}
+              onPress={toggleMute}
               className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
                 isMuted
                   ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
@@ -386,6 +473,7 @@ function CommentatorPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => 
             </Text>
           </View>
         </View>
+
 
         <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
           <View className="flex-row justify-between items-center mb-3">
@@ -535,22 +623,99 @@ const createMatch = (id: number, sport: Sport, sportMatchNumber: number): MatchS
 function BroadcasterPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => void } = {}) {
   const [eventId, setEventId] = useState<string | null>(null)
 
-  const [identity, setIdentity] = useState('bcast-8x585u')
-  const [room, setRoom] = useState('live-switch')
+  const [identity, setIdentity] = useState('broadcaster-1')
   const [isJoined, setIsJoined] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const [joinError, setJoinError] = useState<string | null>(null)
+
+  // LiveKit room & participants
+  const roomRef = useRef<Room | null>(null)
+  const [capturers, setCapturers] = useState<string[]>([])      // identities starting with 'capturer-'
+  const [commentators, setCommentators] = useState<string[]>([]) // identities starting with 'commentator-'
+
+  // Broadcaster's current live selection
+  const [selectedCapturer, setSelectedCapturer] = useState<string | null>(null)
+  const [selectedCommentator, setSelectedCommentator] = useState<string | null>(null)
+  const [isLiveSent, setIsLiveSent] = useState(false)
+
+  // Existing score/match state
   const [selectedSport, setSelectedSport] = useState<Sport>('badminton')
   const [matches, setMatches] = useState<MatchState[]>([])
   const [nextId, setNextId] = useState(1)
-
-  useEffect(() => {
-    onLiveChange?.(isJoined)
-  }, [isJoined, onLiveChange])
-
   const [sportCounters, setSportCounters] = useState<Record<Sport, number>>({
     pickleball: 0,
     badminton: 0,
     football: 0,
   })
+
+  useEffect(() => {
+    onLiveChange?.(isJoined)
+  }, [isJoined, onLiveChange])
+
+  useEffect(() => {
+    return () => { roomRef.current?.disconnect() }
+  }, [])
+
+  const refreshParticipants = (room: Room) => {
+    const caps: string[] = []
+    const comms: string[] = []
+    room.remoteParticipants.forEach((p) => {
+      if (p.identity.startsWith('capturer-')) caps.push(p.identity)
+      else if (p.identity.startsWith('commentator-')) comms.push(p.identity)
+    })
+    setCapturers(caps)
+    setCommentators(comms)
+  }
+
+  const joinRoom = async () => {
+    if (!eventId) return
+    setConnecting(true)
+    setJoinError(null)
+    try {
+      const roomName = `event-${eventId}`
+      const { token, url } = await getLiveKitToken(identity, roomName, 'broadcaster')
+      const room = new Room()
+      roomRef.current = room
+
+      room.on(RoomEvent.ParticipantConnected, () => refreshParticipants(room))
+      room.on(RoomEvent.ParticipantDisconnected, () => refreshParticipants(room))
+
+      await room.connect(url, token)
+      refreshParticipants(room)
+      setIsJoined(true)
+    } catch (e: any) {
+      setJoinError(e?.message ?? 'Failed to join room')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const leaveRoom = async () => {
+    await roomRef.current?.disconnect()
+    roomRef.current = null
+    setIsJoined(false)
+    setCapturers([])
+    setCommentators([])
+    setSelectedCapturer(null)
+    setSelectedCommentator(null)
+    setIsLiveSent(false)
+  }
+
+  /** Send LIVE_UPDATE to all viewers via LiveKit data channel */
+  const sendLiveUpdate = async () => {
+    if (!roomRef.current || !selectedCapturer) return
+    const payload = JSON.stringify({
+      type: 'LIVE_UPDATE',
+      capturerIdentity: selectedCapturer,
+      commentatorIdentity: selectedCommentator ?? null,
+    })
+    const encoder = new TextEncoder()
+    await roomRef.current.localParticipant.publishData(
+      encoder.encode(payload),
+      { reliable: true },
+    )
+    setIsLiveSent(true)
+  }
 
   if (!eventId) {
     return (
@@ -562,11 +727,11 @@ function BroadcasterPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => 
         accentBorder="border-yellow-400/40"
         onSubmit={(id) => {
           setEventId(id)
-          setRoom(id)
         }}
       />
     )
   }
+
 
   const handleAddMatch = () => {
     const nextSportNumber = sportCounters[selectedSport] + 1
@@ -756,25 +921,187 @@ function BroadcasterPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => 
         </View>
       </View>
 
-      <View className="bg-white mt-4 rounded-t-3xl overflow-hidden">
-        <View className="px-6 pt-6 flex-row gap-3">
+      {/* ── LiveKit connection card ─────────────────────────────── */}
+      <View className="mx-6 mt-4 bg-white/[0.05] rounded-3xl border border-white/10 p-5 gap-4">
+
+        {/* Identity + Join/Leave */}
+        <View className="flex-row gap-3 items-end">
           <View className="flex-1">
-            <Text className="text-gray-500 text-xs mb-1">Identity</Text>
+            <Text className="text-white/50 text-xs font-semibold uppercase tracking-widest mb-2">
+              Identity
+            </Text>
             <TextInput
               value={identity}
               onChangeText={setIdentity}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800"
+              editable={!isJoined}
+              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder="broadcaster-1"
             />
           </View>
-          <View className="flex-1">
-            <Text className="text-gray-500 text-xs mb-1">Room</Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800"
-            />
-          </View>
+          <Pressable
+            onPress={isJoined ? leaveRoom : joinRoom}
+            disabled={connecting}
+            className={`flex-row items-center gap-2 px-5 py-3 rounded-xl disabled:opacity-40 ${
+              isJoined
+                ? 'bg-red-500/20 border border-red-500/40 active:bg-red-500/30'
+                : 'bg-orange-500 active:bg-orange-600'
+            }`}
+          >
+            {connecting ? (
+              <ActivityIndicator color={isJoined ? '#f87171' : '#0A0E16'} size="small" />
+            ) : isJoined ? (
+              <WifiOff size={15} color="#f87171" />
+            ) : (
+              <Wifi size={15} color="#0A0E16" />
+            )}
+            <Text className={`font-black text-sm ${isJoined ? 'text-red-400' : 'text-[#0A0E16]'}`}>
+              {connecting ? 'Connecting…' : isJoined ? 'Leave' : 'Join Room'}
+            </Text>
+          </Pressable>
         </View>
+
+        {joinError && (
+          <Text className="text-red-400 text-xs font-medium">{joinError}</Text>
+        )}
+
+        {/* ── Participant selectors (only visible when joined) ── */}
+        {isJoined && (
+          <>
+            {/* Capturer selector */}
+            <View>
+              <View className="flex-row items-center gap-1.5 mb-2">
+                <Video size={13} color="#fb923c" />
+                <Text className="text-orange-400 text-xs font-extrabold tracking-[2px] uppercase">
+                  Select Capturer
+                </Text>
+                <View className="bg-white/10 rounded-full px-1.5 py-0.5 ml-1">
+                  <Text className="text-white/50 text-[10px] font-bold">{capturers.length}</Text>
+                </View>
+              </View>
+              {capturers.length === 0 ? (
+                <View className="bg-white/[0.03] rounded-2xl p-4 items-center border border-white/5">
+                  <Text className="text-white/30 text-xs text-center">
+                    Waiting for capturers to join the room…
+                  </Text>
+                </View>
+              ) : (
+                <View className="gap-2">
+                  {capturers.map((cap) => {
+                    const isSelected = selectedCapturer === cap
+                    return (
+                      <Pressable
+                        key={cap}
+                        onPress={() => {
+                          setSelectedCapturer(isSelected ? null : cap)
+                          setIsLiveSent(false)
+                        }}
+                        className={`flex-row items-center gap-3 p-3.5 rounded-2xl border ${
+                          isSelected
+                            ? 'bg-orange-500/15 border-orange-500/40'
+                            : 'bg-white/[0.04] border-white/10 active:bg-white/10'
+                        }`}
+                      >
+                        <View className={`w-8 h-8 rounded-xl items-center justify-center ${
+                          isSelected ? 'bg-orange-500/30' : 'bg-white/[0.06]'
+                        }`}>
+                          <Video size={14} color={isSelected ? '#fb923c' : 'rgba(255,255,255,0.5)'} />
+                        </View>
+                        <Text className={`flex-1 font-bold text-sm ${isSelected ? 'text-orange-400' : 'text-white/70'}`}>
+                          {cap}
+                        </Text>
+                        {isSelected && (
+                          <View className="bg-orange-500/20 rounded-full px-2 py-0.5">
+                            <Text className="text-orange-400 text-[10px] font-black">SELECTED</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              )}
+            </View>
+
+            {/* Commentator selector */}
+            <View>
+              <View className="flex-row items-center gap-1.5 mb-2">
+                <Mic size={13} color="rgba(255,255,255,0.5)" />
+                <Text className="text-white/50 text-xs font-extrabold tracking-[2px] uppercase">
+                  Select Commentator
+                </Text>
+                <View className="bg-white/10 rounded-full px-1.5 py-0.5 ml-1">
+                  <Text className="text-white/50 text-[10px] font-bold">{commentators.length}</Text>
+                </View>
+                <Text className="text-white/30 text-[10px] ml-1">(optional)</Text>
+              </View>
+              {commentators.length === 0 ? (
+                <View className="bg-white/[0.03] rounded-2xl p-4 items-center border border-white/5">
+                  <Text className="text-white/30 text-xs text-center">
+                    No commentators in the room yet.
+                  </Text>
+                </View>
+              ) : (
+                <View className="gap-2">
+                  {commentators.map((comm) => {
+                    const isSelected = selectedCommentator === comm
+                    return (
+                      <Pressable
+                        key={comm}
+                        onPress={() => {
+                          setSelectedCommentator(isSelected ? null : comm)
+                          setIsLiveSent(false)
+                        }}
+                        className={`flex-row items-center gap-3 p-3.5 rounded-2xl border ${
+                          isSelected
+                            ? 'bg-purple-500/15 border-purple-500/40'
+                            : 'bg-white/[0.04] border-white/10 active:bg-white/10'
+                        }`}
+                      >
+                        <View className={`w-8 h-8 rounded-xl items-center justify-center ${
+                          isSelected ? 'bg-purple-500/30' : 'bg-white/[0.06]'
+                        }`}>
+                          <Mic size={14} color={isSelected ? '#c084fc' : 'rgba(255,255,255,0.5)'} />
+                        </View>
+                        <Text className={`flex-1 font-bold text-sm ${isSelected ? 'text-purple-400' : 'text-white/70'}`}>
+                          {comm}
+                        </Text>
+                        {isSelected && (
+                          <View className="bg-purple-500/20 rounded-full px-2 py-0.5">
+                            <Text className="text-purple-400 text-[10px] font-black">SELECTED</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              )}
+            </View>
+
+            {/* Send Live button */}
+            <Pressable
+              onPress={sendLiveUpdate}
+              disabled={!selectedCapturer}
+              className={`flex-row items-center justify-center gap-2.5 py-4 rounded-2xl border disabled:opacity-30 ${
+                isLiveSent
+                  ? 'bg-emerald-500/20 border-emerald-500/40'
+                  : 'bg-red-500 active:bg-red-600 border-transparent'
+              }`}
+            >
+              <Circle
+                size={10}
+                color={isLiveSent ? '#34d399' : '#fff'}
+                fill={isLiveSent ? '#34d399' : '#fff'}
+              />
+              <Text className={`font-black text-sm ${isLiveSent ? 'text-emerald-400' : 'text-white'}`}>
+                {isLiveSent ? 'Live Update Sent ✓ — Tap to re-send' : 'Send Live to Viewers'}
+              </Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+
+      {/* ── Score / Match controls (existing) ──────────────────── */}
+      <View className="bg-white mt-4 rounded-t-3xl overflow-hidden">
 
         <View className="px-6 mt-4">
           <Text className="text-gray-500 text-xs mb-1">Sport</Text>
@@ -803,77 +1130,32 @@ function BroadcasterPanel({ onLiveChange }: { onLiveChange?: (live: boolean) => 
         </View>
 
         <View className="px-6 mt-4 flex-row items-center gap-3">
-          {isJoined ? (
-            <>
-              <Pressable
-                onPress={() => {
-                  setIsJoined(false)
-                  setMatches([])
-                  setSportCounters({ pickleball: 0, badminton: 0, football: 0 })
-                }}
-                className="bg-red-600 rounded-xl px-5 py-2.5"
-              >
-                <Text className="text-white font-semibold text-sm">Disconnect</Text>
-              </Pressable>
+          <Pressable
+            onPress={handleAddMatch}
+            className="border border-gray-300 rounded-xl px-4 py-2.5 flex-row items-center gap-1.5"
+          >
+            <Plus size={14} color="#111" />
+            <Text className="text-black font-semibold text-sm">Add match</Text>
+          </Pressable>
 
-              <Pressable
-                onPress={handleAddMatch}
-                className="border border-gray-300 rounded-xl px-4 py-2.5 flex-row items-center gap-1.5"
-              >
-                <Plus size={14} color="#111" />
-                <Text className="text-black font-semibold text-sm">Add match</Text>
-              </Pressable>
-
-              <View className="flex-row items-center gap-1.5">
-                <View className="w-2 h-2 rounded-full bg-yellow-400" />
-                <Text className="text-gray-400 text-xs">
-                  {matches.length} match(es) · 0 cam · 0 comm · 0 in lobby
-                </Text>
-              </View>
-            </>
-          ) : (
-            <Pressable
-              onPress={() => setIsJoined(true)}
-              className="bg-gray-900 rounded-xl px-5 py-2.5"
-            >
-              <Text className="text-white font-semibold text-sm">Join as Broadcaster</Text>
-            </Pressable>
-          )}
+          <View className="flex-row items-center gap-1.5">
+            <View className="w-2 h-2 rounded-full bg-yellow-400" />
+            <Text className="text-gray-400 text-xs">
+              {matches.length} match(es) · {capturers.length} cam · {commentators.length} comm
+            </Text>
+          </View>
         </View>
 
-        {isJoined && (
-          <View className="px-6 mt-6 pb-6 gap-4">
-
-            <View className="border border-gray-200 rounded-xl p-4">
-              <View className="flex-row items-center gap-2 mb-1">
-                <Video size={16} color="#111" />
-                <Text className="text-black font-semibold text-base">Camera lobby</Text>
-              </View>
-              <Text className="text-gray-400 text-xs mb-3">Unassigned capturer feeds. Assign each one to a match.</Text>
-              <View className="border border-gray-100 rounded-lg py-4 items-center">
-                <Text className="text-gray-400 text-sm">No unassigned capturers.</Text>
-              </View>
-            </View>
-
-            <View className="border border-gray-200 rounded-xl p-4">
-              <View className="flex-row items-center gap-2 mb-1">
-                <Mic size={16} color="#111" />
-                <Text className="text-black font-semibold text-base">Commentator lobby</Text>
-              </View>
-              <Text className="text-gray-400 text-xs mb-3">Unassigned commentary audio feeds (optional per match).</Text>
-              <View className="border border-gray-100 rounded-lg py-4 items-center">
-                <Text className="text-gray-400 text-sm">No unassigned commentators.</Text>
-              </View>
-            </View>
-
-            {matches.length === 0 ? (
-              <Text className="text-center text-gray-400 text-sm mt-2">
-                No matches yet. Pick a sport above and click <Text className="font-bold text-gray-600">Add match</Text> to create one.
-              </Text>
-            ) : (
-              matches.map(match => {
-                const { nameA, nameB } = getNames(match)
-                return (
+        {/* Match scoreboard cards */}
+        <View className="px-6 mt-4 pb-6 gap-4">
+          {matches.length === 0 ? (
+            <Text className="text-center text-gray-400 text-sm mt-2">
+              No matches yet. Pick a sport above and click <Text className="font-bold text-gray-600">Add match</Text> to create one.
+            </Text>
+          ) : (
+            matches.map(match => {
+              const { nameA, nameB } = getNames(match)
+              return (
                   <View key={match.id} className="border border-gray-200 rounded-xl p-4 gap-4">
                     <View className="flex-row flex-wrap items-center gap-3">
                       <TextInput
