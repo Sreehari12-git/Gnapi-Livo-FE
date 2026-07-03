@@ -1,6 +1,7 @@
 import { View, Text, Pressable, TextInput, ScrollView } from 'react-native'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'expo-router'
+import * as SecureStore from "expo-secure-store"
 import {
   ChevronLeft,
   Video,
@@ -28,8 +29,19 @@ import {
   Trophy,
   Play,
   Pause,
+  ChevronDown,
 } from 'lucide-react-native'
+import { LiveKitRoom, VideoTrack, useLocalParticipant, useTrackVolume, useRemoteParticipants, useTracks } from '@livekit/react-native'
+import { Track } from 'livekit-client'
 import { adminLogin } from './services/auth'
+import { fetchLiveKitToken, parseParticipantRole } from './services/livekit'
+import {
+  createMatch,
+  listMatches,
+  updateMatch as updateMatchApi,
+  deleteMatch as deleteMatchApi,
+  setMatchLiveSelection,
+} from './services/match'
 import EventIdGate from './Eventidgate'
 
 type TabKey = 'capturer' | 'commentator' | 'broadcaster' | 'admin'
@@ -47,12 +59,17 @@ const TABS: Tab[] = [
   { key: 'admin', label: 'Admin', Icon: ShieldCheck },
 ]
 
-function CapturerPanel() {
+function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => void }) {
   const [eventId, setEventId] = useState<string | null>(null)
   const [identity, setIdentity] = useState('cam-aldmmy')
   const [room, setRoom] = useState('live-switch')
-  const [isLive, setIsLive] = useState(false)
   const [camera, setCamera] = useState<'front' | 'back'>('front')
+  const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState('')
+  const isLive = connection !== null
+  const switchCameraRef = useRef<(() => Promise<boolean>) | null>(null)
+  const [switchingCamera, setSwitchingCamera] = useState(false)
 
   if (!eventId) {
     return (
@@ -113,38 +130,65 @@ function CapturerPanel() {
       </View>
 
       <View className="px-6 mt-4 gap-4">
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">
-              Identity
-            </Text>
-            <TextInput
-              value={identity}
-              onChangeText={setIdentity}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="cam-identity"
-            />
-          </View>
+        {!isLive && (
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">
+                Identity
+              </Text>
+              <TextInput
+                value={identity}
+                onChangeText={setIdentity}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="cam-identity"
+              />
+            </View>
 
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">
-              Room
-            </Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="room-name"
-            />
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">
+                Room
+              </Text>
+              <TextInput
+                value={room}
+                onChangeText={setRoom}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="room-name"
+              />
+            </View>
           </View>
-        </View>
+        )}
+
+        {error !== '' && (
+          <View className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 flex-row items-center gap-2">
+            <AlertTriangle size={14} color="#f87171" />
+            <Text className="text-red-400 text-xs font-semibold flex-1">{error}</Text>
+          </View>
+        )}
 
         <View className="flex-row items-center gap-3 flex-wrap">
           <Pressable
-            onPress={() => setIsLive(!isLive)}
-            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
+            disabled={connecting}
+            onPress={async () => {
+              if (isLive) {
+                setConnection(null)
+                onLiveChange?.(false)
+                return
+              }
+              setError('')
+              setConnecting(true)
+              try {
+                const result = await fetchLiveKitToken(identity, room, 'capturer')
+                setConnection(result)
+                onLiveChange?.(true)
+              } catch (err: any) {
+                setError(err.response?.data?.message ?? 'Could not start the capture session.')
+              } finally {
+                setConnecting(false)
+              }
+            }}
+            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'} ${connecting ? 'opacity-60' : ''}`}
           >
             {isLive ? (
               <Square size={14} color="#ffffff" fill="#ffffff" />
@@ -152,17 +196,31 @@ function CapturerPanel() {
               <Circle size={14} color="#dc2626" fill="#dc2626" />
             )}
             <Text className={`font-black text-sm ${isLive ? 'text-white' : 'text-slate-900'}`}>
-              {isLive ? 'Stop' : 'Go Live'}
+              {connecting ? 'Connecting…' : isLive ? 'Stop' : 'Go Live'}
             </Text>
           </Pressable>
 
           <Pressable
-            onPress={() => setCamera(c => c === 'front' ? 'back' : 'front')}
-            className="flex-row items-center gap-2 px-4 py-3 rounded-xl border border-white/15 bg-slate-800 active:bg-slate-700"
+            disabled={switchingCamera}
+            onPress={async () => {
+              if (isLive && switchCameraRef.current) {
+                setSwitchingCamera(true)
+                try {
+                  if (await switchCameraRef.current()) {
+                    setCamera(c => c === 'front' ? 'back' : 'front')
+                  }
+                } finally {
+                  setSwitchingCamera(false)
+                }
+              } else {
+                setCamera(c => c === 'front' ? 'back' : 'front')
+              }
+            }}
+            className={`flex-row items-center gap-2 px-4 py-3 rounded-xl border border-white/15 bg-slate-800 active:bg-slate-700 ${switchingCamera ? 'opacity-60' : ''}`}
           >
             <RefreshCw size={15} color="rgba(255,255,255,0.8)" />
             <Text className="text-white/80 font-semibold text-sm">
-              Switch to {camera === 'front' ? 'back' : 'front'} camera
+              {switchingCamera ? 'Switching…' : `Switch to ${camera === 'front' ? 'back' : 'front'} camera`}
             </Text>
           </Pressable>
 
@@ -177,20 +235,34 @@ function CapturerPanel() {
         <View className="bg-black rounded-3xl overflow-hidden border border-white/10"
           style={{ height: 280 }}
         >
-          {!isLive ? (
+          {!isLive || !connection ? (
             <View className="flex-1 items-center justify-center gap-3">
               <Camera size={44} color="rgba(255,255,255,0.25)" />
               <Text className="text-white/30 text-sm">Camera preview will appear here</Text>
               <Text className="text-white/20 text-xs">Tap Go Live to start streaming</Text>
             </View>
           ) : (
-            <View className="flex-1 items-center justify-center gap-2">
-              <View className="flex-row items-center gap-2 bg-red-500/20 border border-red-500/40 px-4 py-2 rounded-full">
-                <View className="w-2 h-2 rounded-full bg-red-500" />
-                <Text className="text-red-400 font-bold text-sm">LIVE · {camera} camera</Text>
-              </View>
-              <Text className="text-white/20 text-xs mt-2">Streaming to room: {room}</Text>
-            </View>
+            <LiveKitRoom
+              serverUrl={connection.url}
+              token={connection.token}
+              connect
+              audio
+              video={{ facingMode: camera === 'front' ? 'user' : 'environment' }}
+              onDisconnected={() => {
+                setConnection(null)
+                onLiveChange?.(false)
+              }}
+              onError={(err) => setError(err.message)}
+              onMediaDeviceFailure={(failure) => setError(`Camera/mic failed to start${failure ? `: ${failure}` : ''}. Check camera/microphone permissions.`)}
+            >
+              <CapturerPreview
+                room={room}
+                camera={camera}
+                onSwitchCameraReady={(fn) => {
+                  switchCameraRef.current = fn
+                }}
+              />
+            </LiveKitRoom>
           )}
         </View>
 
@@ -222,14 +294,72 @@ function CapturerPanel() {
   )
 }
 
-function CommentatorPanel() {
+function CapturerPreview({
+  room,
+  camera,
+  onSwitchCameraReady,
+}: {
+  room: string
+  camera: 'front' | 'back'
+  onSwitchCameraReady: (fn: () => Promise<boolean>) => void
+}) {
+  const { localParticipant, cameraTrack, lastCameraError, lastMicrophoneError } = useLocalParticipant()
+
+  // NOTE: @livekit/react-native-webrtc's native CameraCaptureController.applyConstraints
+  // (used by mediaStreamTrack._switchCamera()/applyConstraints()) ignores any new
+  // facingMode/deviceId and always re-resolves the camera it was originally created
+  // with, so it can never actually switch cameras in-place. The only way to change
+  // the physical camera is to unpublish the existing camera track and publish a new
+  // one with the new facingMode, forcing a fresh native capturer.
+  useEffect(() => {
+    onSwitchCameraReady(async () => {
+      const nextFacingMode = camera === 'front' ? 'environment' : 'user'
+      if (cameraTrack?.track) {
+        await localParticipant.unpublishTrack(cameraTrack.track as any, true)
+      }
+      await localParticipant.setCameraEnabled(true, { facingMode: nextFacingMode })
+      return true
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraTrack, camera])
+
+  return (
+    <View className="flex-1">
+      {cameraTrack ? (
+        <VideoTrack
+          trackRef={{ participant: localParticipant, publication: cameraTrack, source: Track.Source.Camera }}
+          style={{ flex: 1 }}
+          mirror={camera === 'front'}
+        />
+      ) : (
+        <View className="flex-1 items-center justify-center gap-2">
+          <Text className="text-white/30 text-sm">Starting camera…</Text>
+        </View>
+      )}
+
+      <View className="absolute top-3 left-3 flex-row items-center gap-2 bg-red-500/20 border border-red-500/40 px-4 py-2 rounded-full">
+        <View className="w-2 h-2 rounded-full bg-red-500" />
+        <Text className="text-red-400 font-bold text-sm">LIVE · {camera} camera</Text>
+      </View>
+      {(lastCameraError || lastMicrophoneError) && (
+        <View className="absolute bottom-3 left-3 right-3 bg-red-500/20 border border-red-500/40 rounded-xl px-3 py-2">
+          {lastCameraError && <Text className="text-red-300 text-xs">Camera: {lastCameraError.message}</Text>}
+          {lastMicrophoneError && <Text className="text-red-300 text-xs">Mic: {lastMicrophoneError.message}</Text>}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function CommentatorPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => void }) {
   const [eventId, setEventId] = useState<string | null>(null)
   const [identity, setIdentity] = useState('comm-jc2o4g')
   const [displayName, setDisplayName] = useState('Commentator')
   const [room, setRoom] = useState('live-switch')
-  const [isLive, setIsLive] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
-  const [micLevel, setMicLevel] = useState(0)
+  const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState('')
+  const isLive = connection !== null
 
   if (!eventId) {
     return (
@@ -277,7 +407,7 @@ function CommentatorPanel() {
         <View className="flex-row items-center gap-1">
           <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-slate-600'}`} />
           <Text className="text-emerald-950 font-black text-xs">
-            {isLive ? (isMuted ? 'MUTED' : 'ON AIR') : 'IDLE'}
+            {isLive ? 'ON AIR' : 'IDLE'}
           </Text>
         </View>
       </View>
@@ -290,47 +420,70 @@ function CommentatorPanel() {
       </View>
 
       <View className="px-6 mt-4 gap-4">
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Identity</Text>
-            <TextInput
-              value={identity}
-              onChangeText={setIdentity}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="comm-identity"
-            />
+        {!isLive && (
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Identity</Text>
+              <TextInput
+                value={identity}
+                onChangeText={setIdentity}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="comm-identity"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Display name</Text>
+              <TextInput
+                value={displayName}
+                onChangeText={setDisplayName}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="Your name"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Room</Text>
+              <TextInput
+                value={room}
+                onChangeText={setRoom}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="room-name"
+              />
+            </View>
           </View>
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Display name</Text>
-            <TextInput
-              value={displayName}
-              onChangeText={setDisplayName}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="Your name"
-            />
+        )}
+
+        {error !== '' && (
+          <View className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 flex-row items-center gap-2">
+            <AlertTriangle size={14} color="#f87171" />
+            <Text className="text-red-400 text-xs font-semibold flex-1">{error}</Text>
           </View>
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Room</Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="room-name"
-            />
-          </View>
-        </View>
+        )}
 
         <View className="flex-row items-center gap-3">
           <Pressable
-            onPress={() => {
-              setIsLive(!isLive)
-              setIsMuted(false)
-              setMicLevel(isLive ? 0 : 72)
+            disabled={connecting}
+            onPress={async () => {
+              if (isLive) {
+                setConnection(null)
+                onLiveChange?.(false)
+                return
+              }
+              setError('')
+              setConnecting(true)
+              try {
+                const result = await fetchLiveKitToken(identity, room, 'commentator')
+                setConnection(result)
+                onLiveChange?.(true)
+              } catch (err: any) {
+                setError(err.response?.data?.message ?? 'Could not start the commentary session.')
+              } finally {
+                setConnecting(false)
+              }
             }}
-            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
+            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'} ${connecting ? 'opacity-60' : ''}`}
           >
             {isLive ? (
               <Square size={14} color="#ffffff" fill="#ffffff" />
@@ -338,102 +491,127 @@ function CommentatorPanel() {
               <Circle size={14} color="#dc2626" fill="#dc2626" />
             )}
             <Text className={`font-black text-sm ${isLive ? 'text-white' : 'text-slate-900'}`}>
-              {isLive ? 'Stop' : 'Go Live'}
+              {connecting ? 'Connecting…' : isLive ? 'Stop' : 'Go Live'}
             </Text>
           </Pressable>
+        </View>
 
-          {isLive && (
-            <Pressable
-              onPress={() => {
-                setIsMuted(!isMuted)
-                setMicLevel(isMuted ? 72 : 0)
-              }}
-              className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
-                isMuted
-                  ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
-                  : 'bg-slate-800 border-white/15 active:bg-slate-700'
-              }`}
-            >
-              {isMuted ? (
-                <MicOff size={15} color="#fb923c" />
-              ) : (
-                <Mic size={15} color="rgba(255,255,255,0.7)" />
-              )}
-              <Text className={`font-bold text-sm ${isMuted ? 'text-orange-400' : 'text-white/70'}`}>
-                {isMuted ? 'Unmute' : 'Mute'}
-              </Text>
-            </Pressable>
+        {isLive && connection && (
+          <LiveKitRoom
+            serverUrl={connection.url}
+            token={connection.token}
+            connect
+            audio
+            onDisconnected={() => {
+              setConnection(null)
+              onLiveChange?.(false)
+            }}
+            onError={(err) => setError(err.message)}
+            onMediaDeviceFailure={(failure) => setError(`Mic failed to start${failure ? `: ${failure}` : ''}. Check microphone permissions.`)}
+          >
+            <CommentatorControls room={room} displayName={displayName} />
+          </LiveKitRoom>
+        )}
+      </View>
+    </View>
+  )
+}
+
+function CommentatorControls({ room, displayName }: { room: string; displayName: string }) {
+  const { localParticipant, microphoneTrack, lastMicrophoneError } = useLocalParticipant()
+  const micLevel = useTrackVolume(microphoneTrack?.track as any)
+  const [isMuted, setIsMuted] = useState(false)
+
+  const toggleMute = async () => {
+    await localParticipant.setMicrophoneEnabled(isMuted)
+    setIsMuted(!isMuted)
+  }
+
+  const levelPercent = Math.round(micLevel * 100)
+
+  return (
+    <View className="gap-4">
+      {lastMicrophoneError && (
+        <View className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3">
+          <Text className="text-red-400 text-xs font-semibold">Mic: {lastMicrophoneError.message}</Text>
+        </View>
+      )}
+
+      <View className="flex-row items-center gap-3">
+        <Pressable
+          onPress={toggleMute}
+          className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
+            isMuted
+              ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
+              : 'bg-slate-800 border-white/15 active:bg-slate-700'
+          }`}
+        >
+          {isMuted ? (
+            <MicOff size={15} color="#fb923c" />
+          ) : (
+            <Mic size={15} color="rgba(255,255,255,0.7)" />
           )}
+          <Text className={`font-bold text-sm ${isMuted ? 'text-orange-400' : 'text-white/70'}`}>
+            {isMuted ? 'Unmute' : 'Mute'}
+          </Text>
+        </Pressable>
 
-          <View className="flex-row items-center gap-2 px-3 py-2 rounded-full bg-slate-800 border border-white/10">
-            <View className={`w-2 h-2 rounded-full ${
-              isLive && !isMuted ? 'bg-red-500' :
-              isLive && isMuted  ? 'bg-orange-400' :
-              'bg-slate-500'
-            }`} />
-            <Text className="text-white/40 text-xs">
-              {isLive ? (isMuted ? 'muted' : 'on air') : 'idle'}
-            </Text>
-          </View>
+        <View className="flex-row items-center gap-2 px-3 py-2 rounded-full bg-slate-800 border border-white/10">
+          <View className={`w-2 h-2 rounded-full ${isMuted ? 'bg-orange-400' : 'bg-red-500'}`} />
+          <Text className="text-white/40 text-xs">{isMuted ? 'muted' : 'on air'}</Text>
         </View>
+      </View>
 
-        <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
-          <View className="flex-row justify-between items-center mb-3">
-            <Text className="text-white/60 text-sm font-semibold">Mic level</Text>
-            {isMuted ? (
-              <View className="flex-row items-center gap-1.5">
-                <MicOff size={13} color="rgba(255,255,255,0.4)" />
-                <Text className="text-white/40 text-sm">Muted</Text>
-              </View>
-            ) : (
-              <Text className="text-white/40 text-sm">{micLevel}%</Text>
-            )}
-          </View>
-          <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
-            <View
-              className={`h-2 rounded-full ${
-                isMuted ? 'bg-orange-400' :
-                micLevel > 80 ? 'bg-red-500' :
-                micLevel > 40 ? 'bg-yellow-400' :
-                'bg-emerald-500'
-              }`}
-              style={{ width: `${micLevel}%` }}
-            />
-          </View>
-          <View className="flex-row justify-between mt-2">
-            <Text className="text-white/20 text-xs">0%</Text>
-            <Text className="text-white/20 text-xs">50%</Text>
-            <Text className="text-white/20 text-xs">100%</Text>
-          </View>
-        </View>
-
-        <View className="flex-row gap-3">
-          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
-            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Room</Text>
-            <Text className="text-white font-bold text-sm">{room || '—'}</Text>
-          </View>
-          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
-            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Name</Text>
-            <Text className="text-white font-bold text-sm">{displayName || '—'}</Text>
-          </View>
-          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
-            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Status</Text>
+      <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
+        <View className="flex-row justify-between items-center mb-3">
+          <Text className="text-white/60 text-sm font-semibold">Mic level</Text>
+          {isMuted ? (
             <View className="flex-row items-center gap-1.5">
-              {isLive && isMuted && <MicOff size={13} color="#fb923c" />}
-              {isLive && !isMuted && (
-                <Circle size={9} color="#f87171" fill="#f87171" />
-              )}
-              {!isLive && (
-                <Circle size={9} color="rgba(255,255,255,0.4)" fill="rgba(255,255,255,0.4)" />
-              )}
-              <Text className={`font-bold text-sm ${
-                isLive && !isMuted ? 'text-red-400' :
-                isLive && isMuted  ? 'text-orange-400' :
-                'text-white/40'
-              }`}>
-                {isLive ? (isMuted ? 'Muted' : 'On Air') : 'Idle'}
-              </Text>
+              <MicOff size={13} color="rgba(255,255,255,0.4)" />
+              <Text className="text-white/40 text-sm">Muted</Text>
             </View>
+          ) : (
+            <Text className="text-white/40 text-sm">{levelPercent}%</Text>
+          )}
+        </View>
+        <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <View
+            className={`h-2 rounded-full ${
+              isMuted ? 'bg-orange-400' :
+              levelPercent > 80 ? 'bg-red-500' :
+              levelPercent > 40 ? 'bg-yellow-400' :
+              'bg-emerald-500'
+            }`}
+            style={{ width: `${isMuted ? 0 : levelPercent}%` }}
+          />
+        </View>
+        <View className="flex-row justify-between mt-2">
+          <Text className="text-white/20 text-xs">0%</Text>
+          <Text className="text-white/20 text-xs">50%</Text>
+          <Text className="text-white/20 text-xs">100%</Text>
+        </View>
+      </View>
+
+      <View className="flex-row gap-3">
+        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+          <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Room</Text>
+          <Text className="text-white font-bold text-sm">{room || '—'}</Text>
+        </View>
+        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+          <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Name</Text>
+          <Text className="text-white font-bold text-sm">{displayName || '—'}</Text>
+        </View>
+        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+          <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Status</Text>
+          <View className="flex-row items-center gap-1.5">
+            {isMuted ? (
+              <MicOff size={13} color="#fb923c" />
+            ) : (
+              <Circle size={9} color="#f87171" fill="#f87171" />
+            )}
+            <Text className={`font-bold text-sm ${isMuted ? 'text-orange-400' : 'text-red-400'}`}>
+              {isMuted ? 'Muted' : 'On Air'}
+            </Text>
           </View>
         </View>
       </View>
@@ -444,6 +622,8 @@ function CommentatorPanel() {
 
 type Sport = 'pickleball' | 'badminton' | 'football'
 type Side = 'A' | 'B'
+type MatchLiveStatus = 'not_started' | 'live' | 'ended'
+type RosterParticipant = { identity: string; name?: string }
 
 const SPORT_LABELS: Record<Sport, string> = {
   pickleball: 'Pickleball',
@@ -475,14 +655,14 @@ const createRacketScore = (sport: 'badminton' | 'pickleball'): RacketScoreState 
   visible: true,
 })
 
-type MatchStatus = 'not_started' | 'live' | 'half_time' | 'ended'
+type FootballClockStatus = 'not_started' | 'live' | 'half_time' | 'ended'
 
 interface FootballScoreState {
   nameA: string
   nameB: string
   goalsA: number
   goalsB: number
-  status: MatchStatus
+  status: FootballClockStatus
   minute: number
   visible: boolean
 }
@@ -498,10 +678,12 @@ const createFootballScore = (): FootballScoreState => ({
 })
 
 interface MatchState {
-  id: number
+  id: string
   sport: Sport
-  sportMatchNumber: number
   name: string
+  liveStatus: MatchLiveStatus
+  liveCapturerIdentity: string | null
+  liveCommentatorIdentity: string | null
   audioOn: boolean
   commentaryMuted: boolean
   winner: Side | null
@@ -509,34 +691,59 @@ interface MatchState {
   footballScore?: FootballScoreState
 }
 
-const createMatch = (id: number, sport: Sport, sportMatchNumber: number): MatchState => ({
-  id,
-  sport,
-  sportMatchNumber,
-  name: `${SPORT_LABELS[sport]} Match ${sportMatchNumber}`,
-  audioOn: true,
-  commentaryMuted: false,
-  winner: null,
-  racketScore: sport === 'football' ? undefined : createRacketScore(sport),
-  footballScore: sport === 'football' ? createFootballScore() : undefined,
-})
 
-
-function BroadcasterPanel() {
+function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean) => void }) {
   const [eventId, setEventId] = useState<string | null>(null)
 
   const [identity, setIdentity] = useState('bcast-8x585u')
-  const [room, setRoom] = useState('live-switch')
-  const [isJoined, setIsJoined] = useState(false)
+  const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [joinError, setJoinError] = useState('')
+  const isJoined = connection !== null
   const [selectedSport, setSelectedSport] = useState<Sport>('badminton')
   const [matches, setMatches] = useState<MatchState[]>([])
-  const [nextId, setNextId] = useState(1)
+  const [assigningMatchId, setAssigningMatchId] = useState<string | null>(null)
+  const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[] }>({
+    capturers: [],
+    commentators: [],
+  })
 
   const [sportCounters, setSportCounters] = useState<Record<Sport, number>>({
     pickleball: 0,
     badminton: 0,
     football: 0,
   })
+
+  const refreshMatches = async () => {
+    if (!eventId) return
+    const serverMatches = await listMatches(eventId, false)
+    setMatches(prev =>
+      serverMatches.map(sm => {
+        const existing = prev.find(m => m.id === sm.id)
+        const sport = sm.sport as Sport
+        return {
+          id: sm.id,
+          sport,
+          name: sm.name,
+          liveStatus: sm.liveStatus as MatchLiveStatus,
+          liveCapturerIdentity: sm.liveCapturerIdentity,
+          liveCommentatorIdentity: sm.liveCommentatorIdentity,
+          audioOn: existing?.audioOn ?? true,
+          commentaryMuted: existing?.commentaryMuted ?? false,
+          winner: existing?.winner ?? null,
+          racketScore: existing?.racketScore ?? (sport === 'football' ? undefined : createRacketScore(sport as 'badminton' | 'pickleball')),
+          footballScore: existing?.footballScore ?? (sport === 'football' ? createFootballScore() : undefined),
+        }
+      }),
+    )
+  }
+
+  useEffect(() => {
+    if (isJoined) {
+      refreshMatches().catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJoined])
 
   if (!eventId) {
     return (
@@ -546,38 +753,60 @@ function BroadcasterPanel() {
         accentIcon={<Radio size={20} color="#facc15" />}
         accentBg="bg-yellow-400/20"
         accentBorder="border-yellow-400/40"
-        onSubmit={(id) => {
-          setEventId(id)
-          setRoom(id)
-        }}
+        onSubmit={(id) => setEventId(id)}
       />
     )
   }
 
-  const handleAddMatch = () => {
+  const handleAddMatch = async () => {
     const nextSportNumber = sportCounters[selectedSport] + 1
-    setSportCounters(prev => ({ ...prev, [selectedSport]: nextSportNumber }))
-    setMatches(prev => [...prev, createMatch(nextId, selectedSport, nextSportNumber)])
-    setNextId(id => id + 1)
+    const name = `${SPORT_LABELS[selectedSport]} Match ${nextSportNumber}`
+    try {
+      const created = await createMatch({ eventId, sport: selectedSport, name })
+      setSportCounters(prev => ({ ...prev, [selectedSport]: nextSportNumber }))
+      setMatches(prev => [
+        ...prev,
+        {
+          id: created.id,
+          sport: selectedSport,
+          name: created.name,
+          liveStatus: created.liveStatus as MatchLiveStatus,
+          liveCapturerIdentity: created.liveCapturerIdentity,
+          liveCommentatorIdentity: created.liveCommentatorIdentity,
+          audioOn: true,
+          commentaryMuted: false,
+          winner: null,
+          racketScore: selectedSport === 'football' ? undefined : createRacketScore(selectedSport),
+          footballScore: selectedSport === 'football' ? createFootballScore() : undefined,
+        },
+      ])
+    } catch (err: any) {
+      setJoinError(err.response?.data?.message ?? 'Could not create match.')
+    }
   }
 
-  const removeMatch = (id: number) => {
-    setMatches(prev => prev.filter(m => m.id !== id))
+  const removeMatch = async (id: string) => {
+    try {
+      await deleteMatchApi(id)
+      setMatches(prev => prev.filter(m => m.id !== id))
+    } catch (err: any) {
+      setJoinError(err.response?.data?.message ?? 'Could not remove match.')
+    }
   }
 
-  const updateMatch = (id: number, updater: (m: MatchState) => MatchState) => {
+  const updateMatch = (id: string, updater: (m: MatchState) => MatchState) => {
     setMatches(prev => prev.map(m => (m.id === id ? updater(m) : m)))
   }
 
-  const updateRacketScore = (id: number, updater: (s: RacketScoreState) => RacketScoreState) => {
+  const updateRacketScore = (id: string, updater: (s: RacketScoreState) => RacketScoreState) => {
     updateMatch(id, m => (m.racketScore ? { ...m, racketScore: updater(m.racketScore) } : m))
   }
 
-  const updateFootballScore = (id: number, updater: (s: FootballScoreState) => FootballScoreState) => {
+  const updateFootballScore = (id: string, updater: (s: FootballScoreState) => FootballScoreState) => {
     updateMatch(id, m => (m.footballScore ? { ...m, footballScore: updater(m.footballScore) } : m))
   }
 
-  const addPoint = (id: number, side: Side) => {
+  const addPoint = (id: string, side: Side) => {
     updateRacketScore(id, s => ({
       ...s,
       pointsA: side === 'A' ? s.pointsA + 1 : s.pointsA,
@@ -585,7 +814,7 @@ function BroadcasterPanel() {
     }))
   }
 
-  const subtractPoint = (id: number, side: Side) => {
+  const subtractPoint = (id: string, side: Side) => {
     updateRacketScore(id, s => ({
       ...s,
       pointsA: side === 'A' ? Math.max(0, s.pointsA - 1) : s.pointsA,
@@ -593,7 +822,7 @@ function BroadcasterPanel() {
     }))
   }
 
-  const winGame = (id: number, side: Side) => {
+  const winGame = (id: string, side: Side) => {
     updateRacketScore(id, s => ({
       ...s,
       gamesA: side === 'A' ? s.gamesA + 1 : s.gamesA,
@@ -605,19 +834,19 @@ function BroadcasterPanel() {
     }))
   }
 
-  const swapServer = (id: number) => {
+  const swapServer = (id: string) => {
     updateRacketScore(id, s => ({ ...s, server: s.server === 'A' ? 'B' : 'A' }))
   }
 
-  const toggleRacketVisible = (id: number) => {
+  const toggleRacketVisible = (id: string) => {
     updateRacketScore(id, s => ({ ...s, visible: !s.visible }))
   }
 
-  const resetRacketScore = (id: number, sport: 'badminton' | 'pickleball') => {
+  const resetRacketScore = (id: string, sport: 'badminton' | 'pickleball') => {
     updateRacketScore(id, () => createRacketScore(sport))
   }
 
-  const renameRacketPlayer = (id: number, side: Side, name: string) => {
+  const renameRacketPlayer = (id: string, side: Side, name: string) => {
     updateRacketScore(id, s => ({
       ...s,
       nameA: side === 'A' ? name : s.nameA,
@@ -625,7 +854,7 @@ function BroadcasterPanel() {
     }))
   }
 
-  const addGoal = (id: number, side: Side) => {
+  const addGoal = (id: string, side: Side) => {
     updateFootballScore(id, s => ({
       ...s,
       goalsA: side === 'A' ? s.goalsA + 1 : s.goalsA,
@@ -633,7 +862,7 @@ function BroadcasterPanel() {
     }))
   }
 
-  const subtractGoal = (id: number, side: Side) => {
+  const subtractGoal = (id: string, side: Side) => {
     updateFootballScore(id, s => ({
       ...s,
       goalsA: side === 'A' ? Math.max(0, s.goalsA - 1) : s.goalsA,
@@ -641,23 +870,23 @@ function BroadcasterPanel() {
     }))
   }
 
-  const setMatchStatus = (id: number, status: MatchStatus) => {
+  const setMatchClockStatus = (id: string, status: FootballClockStatus) => {
     updateFootballScore(id, s => ({ ...s, status }))
   }
 
-  const incrementMinute = (id: number) => {
+  const incrementMinute = (id: string) => {
     updateFootballScore(id, s => ({ ...s, minute: s.minute + 1 }))
   }
 
-  const toggleFootballVisible = (id: number) => {
+  const toggleFootballVisible = (id: string) => {
     updateFootballScore(id, s => ({ ...s, visible: !s.visible }))
   }
 
-  const resetFootballScore = (id: number) => {
+  const resetFootballScore = (id: string) => {
     updateFootballScore(id, () => createFootballScore())
   }
 
-  const renameFootballTeam = (id: number, side: Side, name: string) => {
+  const renameFootballTeam = (id: string, side: Side, name: string) => {
     updateFootballScore(id, s => ({
       ...s,
       nameA: side === 'A' ? name : s.nameA,
@@ -665,28 +894,83 @@ function BroadcasterPanel() {
     }))
   }
 
-  const clearLive = (id: number) => {
+  const applyLiveSelection = async (
+    id: string,
+    payload: { liveCapturerIdentity?: string | null; liveCommentatorIdentity?: string | null },
+  ) => {
+    setAssigningMatchId(id)
+    try {
+      await setMatchLiveSelection(id, payload)
+      await refreshMatches()
+    } catch (err: any) {
+      setJoinError(err.response?.data?.message ?? 'Could not update live assignment.')
+    } finally {
+      setAssigningMatchId(null)
+    }
+  }
+
+  const assignCapturerToMatch = (capturerIdentity: string, matchId: string | null) => {
+    if (matchId) {
+      applyLiveSelection(matchId, { liveCapturerIdentity: capturerIdentity })
+      return
+    }
+    const current = matches.find(m => m.liveCapturerIdentity === capturerIdentity)
+    if (current) applyLiveSelection(current.id, { liveCapturerIdentity: null })
+  }
+
+  const assignCommentatorToMatch = (commentatorIdentity: string, matchId: string | null) => {
+    if (matchId) {
+      applyLiveSelection(matchId, { liveCommentatorIdentity: commentatorIdentity })
+      return
+    }
+    const current = matches.find(m => m.liveCommentatorIdentity === commentatorIdentity)
+    if (current) applyLiveSelection(current.id, { liveCommentatorIdentity: null })
+  }
+
+  const clearLive = async (id: string) => {
     updateMatch(id, m => {
       if (m.sport === 'football') {
         return { ...m, winner: null, footballScore: createFootballScore() }
       }
       return { ...m, winner: null, racketScore: createRacketScore(m.sport as 'badminton' | 'pickleball') }
     })
+    await applyLiveSelection(id, { liveCapturerIdentity: null, liveCommentatorIdentity: null })
   }
 
-  const declareWinner = (id: number, side: Side) => {
+  const declareWinner = async (id: string, side: Side) => {
+    const match = matches.find(m => m.id === id)
+    if (!match) return
+    const { nameA, nameB } = getNames(match)
+    const teamAScore = match.sport === 'football' ? match.footballScore?.goalsA ?? 0 : match.racketScore?.gamesA ?? 0
+    const teamBScore = match.sport === 'football' ? match.footballScore?.goalsB ?? 0 : match.racketScore?.gamesB ?? 0
+
     updateMatch(id, m => ({ ...m, winner: side }))
+
+    try {
+      const updated = await updateMatchApi(id, {
+        liveStatus: 'ended',
+        finalScore: { teamAName: nameA, teamBName: nameB, teamAScore, teamBScore },
+      })
+      updateMatch(id, m => ({
+        ...m,
+        liveStatus: updated.liveStatus as MatchLiveStatus,
+        liveCapturerIdentity: updated.liveCapturerIdentity,
+        liveCommentatorIdentity: updated.liveCommentatorIdentity,
+      }))
+    } catch (err: any) {
+      setJoinError(err.response?.data?.message ?? 'Could not end match.')
+    }
   }
 
-  const toggleAudio = (id: number) => {
+  const toggleAudio = (id: string) => {
     updateMatch(id, m => ({ ...m, audioOn: !m.audioOn }))
   }
 
-  const toggleCommentaryMute = (id: number) => {
+  const toggleCommentaryMute = (id: string) => {
     updateMatch(id, m => ({ ...m, commentaryMuted: !m.commentaryMuted }))
   }
 
-  const renameMatch = (id: number, name: string) => {
+  const renameMatch = (id: string, name: string) => {
     updateMatch(id, m => ({ ...m, name }))
   }
 
@@ -749,14 +1033,7 @@ function BroadcasterPanel() {
             <TextInput
               value={identity}
               onChangeText={setIdentity}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800"
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-gray-500 text-xs mb-1">Room</Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
+              editable={!isJoined}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800"
             />
           </View>
@@ -788,12 +1065,20 @@ function BroadcasterPanel() {
           </Text>
         </View>
 
+        {joinError !== '' && (
+          <View className="mx-6 mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex-row items-center gap-2">
+            <AlertTriangle size={14} color="#dc2626" />
+            <Text className="text-red-600 text-xs font-semibold flex-1">{joinError}</Text>
+          </View>
+        )}
+
         <View className="px-6 mt-4 flex-row items-center gap-3">
           {isJoined ? (
             <>
               <Pressable
                 onPress={() => {
-                  setIsJoined(false)
+                  setConnection(null)
+                  onJoinChange?.(false)
                   setMatches([])
                   setSportCounters({ pickleball: 0, badminton: 0, football: 0 })
                 }}
@@ -813,44 +1098,58 @@ function BroadcasterPanel() {
               <View className="flex-row items-center gap-1.5">
                 <View className="w-2 h-2 rounded-full bg-yellow-400" />
                 <Text className="text-gray-400 text-xs">
-                  {matches.length} match(es) · 0 cam · 0 comm · 0 in lobby
+                  {matches.length} match(es)
                 </Text>
               </View>
             </>
           ) : (
             <Pressable
-              onPress={() => setIsJoined(true)}
-              className="bg-gray-900 rounded-xl px-5 py-2.5"
+              disabled={connecting}
+              onPress={async () => {
+                setJoinError('')
+                setConnecting(true)
+                try {
+                  const result = await fetchLiveKitToken(identity, eventId, 'broadcaster')
+                  setConnection(result)
+                  onJoinChange?.(true)
+                } catch (err: any) {
+                  setJoinError(err.response?.data?.message ?? 'Could not join as broadcaster.')
+                } finally {
+                  setConnecting(false)
+                }
+              }}
+              className={`bg-gray-900 rounded-xl px-5 py-2.5 ${connecting ? 'opacity-60' : ''}`}
             >
-              <Text className="text-white font-semibold text-sm">Join as Broadcaster</Text>
+              <Text className="text-white font-semibold text-sm">
+                {connecting ? 'Connecting…' : 'Join as Broadcaster'}
+              </Text>
             </Pressable>
           )}
         </View>
 
+        {isJoined && connection && (
+          <LiveKitRoom
+            serverUrl={connection.url}
+            token={connection.token}
+            connect
+            onDisconnected={() => {
+              setConnection(null)
+              onJoinChange?.(false)
+            }}
+            onError={(err) => setJoinError(err.message)}
+          >
+            <BroadcasterLobbies
+              matches={matches}
+              busy={assigningMatchId !== null}
+              onAssignCapturer={assignCapturerToMatch}
+              onAssignCommentator={assignCommentatorToMatch}
+              onRosterChange={(capturers, commentators) => setRoster({ capturers, commentators })}
+            />
+          </LiveKitRoom>
+        )}
+
         {isJoined && (
           <View className="px-6 mt-6 pb-6 gap-4">
-
-            <View className="border border-gray-200 rounded-xl p-4">
-              <View className="flex-row items-center gap-2 mb-1">
-                <Video size={16} color="#111" />
-                <Text className="text-black font-semibold text-base">Camera lobby</Text>
-              </View>
-              <Text className="text-gray-400 text-xs mb-3">Unassigned capturer feeds. Assign each one to a match.</Text>
-              <View className="border border-gray-100 rounded-lg py-4 items-center">
-                <Text className="text-gray-400 text-sm">No unassigned capturers.</Text>
-              </View>
-            </View>
-
-            <View className="border border-gray-200 rounded-xl p-4">
-              <View className="flex-row items-center gap-2 mb-1">
-                <Mic size={16} color="#111" />
-                <Text className="text-black font-semibold text-base">Commentator lobby</Text>
-              </View>
-              <Text className="text-gray-400 text-xs mb-3">Unassigned commentary audio feeds (optional per match).</Text>
-              <View className="border border-gray-100 rounded-lg py-4 items-center">
-                <Text className="text-gray-400 text-sm">No unassigned commentators.</Text>
-              </View>
-            </View>
 
             {matches.length === 0 ? (
               <Text className="text-center text-gray-400 text-sm mt-2">
@@ -859,6 +1158,8 @@ function BroadcasterPanel() {
             ) : (
               matches.map(match => {
                 const { nameA, nameB } = getNames(match)
+                const feedCount = (match.liveCapturerIdentity ? 1 : 0) + (match.liveCommentatorIdentity ? 1 : 0)
+                const isEnded = match.liveStatus === 'ended'
                 return (
                   <View key={match.id} className="border border-gray-200 rounded-xl p-4 gap-4">
                     <View className="flex-row flex-wrap items-center gap-3">
@@ -872,7 +1173,14 @@ function BroadcasterPanel() {
                         <Text className="text-gray-600 text-xs font-semibold">{SPORT_LABELS[match.sport]}</Text>
                       </View>
                       <Text className="text-gray-400 text-sm">
-                        0 feed(s) · {match.winner ? `${match.winner === 'A' ? nameA : nameB} won` : 'no live feed'}
+                        {feedCount} feed(s) ·{' '}
+                        {isEnded
+                          ? match.winner
+                            ? `${match.winner === 'A' ? nameA : nameB} won`
+                            : 'ended'
+                          : match.liveCapturerIdentity
+                          ? 'live'
+                          : 'no live feed'}
                       </Text>
                       <View className="flex-row flex-wrap items-center gap-2">
                         <Pressable
@@ -904,32 +1212,34 @@ function BroadcasterPanel() {
                       </View>
                     </View>
 
-                    <View className="border border-blue-100 bg-blue-50/40 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
-                      <Text className="text-gray-600 text-xs" style={{ minWidth: 160, flexGrow: 1, flexBasis: 160 }}>
-                        When the match is over, declare the winner — the live feed will stop and viewers will see the result.
-                      </Text>
-                      <View className="flex-row flex-wrap items-center gap-2">
-                        <Pressable
-                          onPress={() => declareWinner(match.id, 'A')}
-                          className={`rounded-lg px-3 py-2 flex-row items-center gap-1.5 ${match.winner === 'A' ? 'bg-amber-100' : 'bg-gray-100'}`}
-                        >
-                          <Trophy size={14} color="#b45309" />
-                          <Text className="text-black text-xs font-semibold">{nameA} wins</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => declareWinner(match.id, 'B')}
-                          className={`rounded-lg px-3 py-2 flex-row items-center gap-1.5 ${match.winner === 'B' ? 'bg-amber-100' : 'bg-gray-100'}`}
-                        >
-                          <Trophy size={14} color="#b45309" />
-                          <Text className="text-black text-xs font-semibold">{nameB} wins</Text>
-                        </Pressable>
+                    {!isEnded && (
+                      <View className="border border-blue-100 bg-blue-50/40 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
+                        <Text className="text-gray-600 text-xs" style={{ minWidth: 160, flexGrow: 1, flexBasis: 160 }}>
+                          When the match is over, declare the winner — the live feed will stop and viewers will see the result.
+                        </Text>
+                        <View className="flex-row flex-wrap items-center gap-2">
+                          <Pressable
+                            onPress={() => declareWinner(match.id, 'A')}
+                            className={`rounded-lg px-3 py-2 flex-row items-center gap-1.5 ${match.winner === 'A' ? 'bg-amber-100' : 'bg-gray-100'}`}
+                          >
+                            <Trophy size={14} color="#b45309" />
+                            <Text className="text-black text-xs font-semibold">{nameA} wins</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => declareWinner(match.id, 'B')}
+                            className={`rounded-lg px-3 py-2 flex-row items-center gap-1.5 ${match.winner === 'B' ? 'bg-amber-100' : 'bg-gray-100'}`}
+                          >
+                            <Trophy size={14} color="#b45309" />
+                            <Text className="text-black text-xs font-semibold">{nameB} wins</Text>
+                          </Pressable>
+                        </View>
                       </View>
-                    </View>
+                    )}
 
-                    {match.winner ? (
+                    {isEnded ? (
                       <View className="border border-gray-100 rounded-lg py-6 items-center">
                         <Text className="text-black font-semibold text-base">
-                          {match.winner === 'A' ? nameA : nameB} won the match
+                          {match.winner ? `${match.winner === 'A' ? nameA : nameB} won the match` : 'Match ended'}
                         </Text>
                         <Text className="text-gray-400 text-xs mt-1">
                           Live feed stopped. Viewers are seeing the final result.
@@ -937,36 +1247,43 @@ function BroadcasterPanel() {
                       </View>
                     ) : (
                       <>
-                        <View className="border border-gray-100 rounded-lg py-4 items-center">
-                          <Text className="text-gray-400 text-sm">Assign capturers from the lobby above.</Text>
-                        </View>
-
-                        <View className="border border-gray-200 rounded-xl p-4">
-                          <View className="flex-row items-center justify-between mb-3">
-                            <View className="flex-row items-center gap-2">
-                              <Mic size={16} color="#111" />
-                              <Text className="text-black font-semibold text-base">Commentary</Text>
-                              <Text className="text-gray-400 text-xs">optional</Text>
-                            </View>
-                            <Pressable
-                              onPress={() => toggleCommentaryMute(match.id)}
-                              className="border border-gray-200 rounded-lg px-3 py-1.5 flex-row items-center gap-1.5"
-                            >
-                              {match.commentaryMuted ? (
-                                <VolumeX size={14} color="#9ca3af" />
-                              ) : (
-                                <Mic size={14} color="#9ca3af" />
-                              )}
-                              <Text className="text-gray-400 text-xs font-medium">
-                                {match.commentaryMuted ? 'Unmute' : 'Mute'}
-                              </Text>
-                            </Pressable>
-                          </View>
-                          <View className="border border-gray-100 rounded-lg py-4 items-center">
-                            <Text className="text-gray-400 text-sm">
-                              No commentator assigned. Assign one from the commentator lobby above.
+                        <View className="border border-gray-200 rounded-xl p-4 gap-2">
+                          <View className="flex-row items-center gap-2">
+                            <Video size={14} color="#111" />
+                            <Text className="text-black text-sm font-semibold">
+                              {match.liveCapturerIdentity
+                                ? `Camera live: ${roster.capturers.find(p => p.identity === match.liveCapturerIdentity)?.name || match.liveCapturerIdentity}`
+                                : 'No capturer assigned'}
                             </Text>
                           </View>
+                          <View className="flex-row items-center justify-between">
+                            <View className="flex-row items-center gap-2">
+                              <Mic size={14} color="#111" />
+                              <Text className="text-black text-sm font-semibold">
+                                {match.liveCommentatorIdentity
+                                  ? `Commentary live: ${roster.commentators.find(p => p.identity === match.liveCommentatorIdentity)?.name || match.liveCommentatorIdentity}`
+                                  : 'No commentator assigned'}
+                              </Text>
+                            </View>
+                            {match.liveCommentatorIdentity && (
+                              <Pressable
+                                onPress={() => toggleCommentaryMute(match.id)}
+                                className="border border-gray-200 rounded-lg px-3 py-1.5 flex-row items-center gap-1.5"
+                              >
+                                {match.commentaryMuted ? (
+                                  <VolumeX size={14} color="#9ca3af" />
+                                ) : (
+                                  <Mic size={14} color="#9ca3af" />
+                                )}
+                                <Text className="text-gray-400 text-xs font-medium">
+                                  {match.commentaryMuted ? 'Unmute' : 'Mute'}
+                                </Text>
+                              </Pressable>
+                            )}
+                          </View>
+                          <Text className="text-gray-400 text-xs">
+                            Assign feeds from the Camera lobby / Commentator lobby above.
+                          </Text>
                         </View>
 
                         {match.sport === 'football' && match.footballScore ? (
@@ -975,7 +1292,7 @@ function BroadcasterPanel() {
                             score={match.footballScore}
                             onAddGoal={addGoal}
                             onSubtractGoal={subtractGoal}
-                            onSetStatus={setMatchStatus}
+                            onSetStatus={setMatchClockStatus}
                             onIncrementMinute={incrementMinute}
                             onToggleVisible={toggleFootballVisible}
                             onReset={resetFootballScore}
@@ -1008,6 +1325,176 @@ function BroadcasterPanel() {
   )
 }
 
+function BroadcasterLobbies({
+  matches,
+  busy,
+  onAssignCapturer,
+  onAssignCommentator,
+  onRosterChange,
+}: {
+  matches: MatchState[]
+  busy: boolean
+  onAssignCapturer: (capturerIdentity: string, matchId: string | null) => void
+  onAssignCommentator: (commentatorIdentity: string, matchId: string | null) => void
+  onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[]) => void
+}) {
+  const participants = useRemoteParticipants()
+  const cameraTracks = useTracks([Track.Source.Camera])
+
+  const capturers = participants.filter((p) => parseParticipantRole(p.metadata) === 'capturer')
+  const commentators = participants.filter((p) => parseParticipantRole(p.metadata) === 'commentator')
+  const assignableMatches = matches.filter((m) => m.liveStatus !== 'ended')
+
+  useEffect(() => {
+    onRosterChange(
+      capturers.map((p) => ({ identity: p.identity, name: p.name })),
+      commentators.map((p) => ({ identity: p.identity, name: p.name })),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants])
+
+  return (
+    <View className="px-6 mt-6 gap-4">
+      <View className="border border-gray-200 rounded-xl p-4">
+        <View className="flex-row items-center gap-2 mb-1">
+          <Video size={16} color="#111" />
+          <Text className="text-black font-semibold text-base">Camera lobby</Text>
+        </View>
+        <Text className="text-gray-400 text-xs mb-3">Connected capturer feeds. Assign each one to a match.</Text>
+        {capturers.length === 0 ? (
+          <View className="border border-gray-100 rounded-lg py-4 items-center">
+            <Text className="text-gray-400 text-sm">No capturers connected.</Text>
+          </View>
+        ) : (
+          <View className="gap-2">
+            {capturers.map((p) => {
+              const trackRef = cameraTracks.find((t) => t.participant.identity === p.identity)
+              const assignedMatch = matches.find((m) => m.liveCapturerIdentity === p.identity)
+              return (
+                <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
+                  <View className="flex-row items-center gap-3">
+                    <View className="w-20 h-14 rounded-md overflow-hidden bg-black items-center justify-center">
+                      {trackRef ? (
+                        <VideoTrack trackRef={trackRef} style={{ width: 80, height: 56 }} />
+                      ) : (
+                        <Text className="text-white/40 text-[10px]">no video</Text>
+                      )}
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-black font-semibold text-sm">{p.name || p.identity}</Text>
+                      <Text className="text-gray-400 text-xs">{p.identity}</Text>
+                    </View>
+                  </View>
+                  <MatchAssignDropdown
+                    matches={assignableMatches}
+                    selectedMatchId={assignedMatch?.id ?? null}
+                    disabled={busy}
+                    onSelect={(matchId) => onAssignCapturer(p.identity, matchId)}
+                  />
+                </View>
+              )
+            })}
+          </View>
+        )}
+      </View>
+
+      <View className="border border-gray-200 rounded-xl p-4">
+        <View className="flex-row items-center gap-2 mb-1">
+          <Mic size={16} color="#111" />
+          <Text className="text-black font-semibold text-base">Commentator lobby</Text>
+        </View>
+        <Text className="text-gray-400 text-xs mb-3">Connected commentary feeds (optional). Assign each one to a match.</Text>
+        {commentators.length === 0 ? (
+          <View className="border border-gray-100 rounded-lg py-4 items-center">
+            <Text className="text-gray-400 text-sm">No commentators connected.</Text>
+          </View>
+        ) : (
+          <View className="gap-2">
+            {commentators.map((p) => {
+              const assignedMatch = matches.find((m) => m.liveCommentatorIdentity === p.identity)
+              return (
+                <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
+                  <View className="flex-1">
+                    <Text className="text-black font-semibold text-sm">{p.name || p.identity}</Text>
+                    <Text className="text-gray-400 text-xs">{p.identity}</Text>
+                  </View>
+                  <MatchAssignDropdown
+                    matches={assignableMatches}
+                    selectedMatchId={assignedMatch?.id ?? null}
+                    disabled={busy}
+                    onSelect={(matchId) => onAssignCommentator(p.identity, matchId)}
+                  />
+                </View>
+              )
+            })}
+          </View>
+        )}
+      </View>
+    </View>
+  )
+}
+
+function MatchAssignDropdown({
+  matches,
+  selectedMatchId,
+  disabled,
+  onSelect,
+}: {
+  matches: MatchState[]
+  selectedMatchId: string | null
+  disabled?: boolean
+  onSelect: (matchId: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const selectedMatch = matches.find((m) => m.id === selectedMatchId)
+
+  return (
+    <View>
+      <Pressable
+        disabled={disabled}
+        onPress={() => setOpen((o) => !o)}
+        className={`border border-gray-200 rounded-lg px-3 py-2 flex-row items-center justify-between ${disabled ? 'opacity-50' : 'bg-white'}`}
+      >
+        <Text className={`text-sm ${selectedMatch ? 'text-black font-semibold' : 'text-gray-400'}`}>
+          {selectedMatch ? selectedMatch.name : 'Assign to…'}
+        </Text>
+        <ChevronDown size={14} color="#9ca3af" />
+      </Pressable>
+      {open && (
+        <View className="border border-gray-200 rounded-lg mt-1 overflow-hidden">
+          <Pressable
+            onPress={() => {
+              onSelect(null)
+              setOpen(false)
+            }}
+            className="px-3 py-2.5 border-b border-gray-100"
+          >
+            <Text className="text-gray-400 text-sm">Assign to…</Text>
+          </Pressable>
+          {matches.length === 0 ? (
+            <View className="px-3 py-2.5">
+              <Text className="text-gray-400 text-xs">No matches yet — add one below.</Text>
+            </View>
+          ) : (
+            matches.map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => {
+                  onSelect(m.id)
+                  setOpen(false)
+                }}
+                className={`px-3 py-2.5 ${m.id === selectedMatchId ? 'bg-blue-50' : ''}`}
+              >
+                <Text className="text-black text-sm">{m.name}</Text>
+              </Pressable>
+            ))
+          )}
+        </View>
+      )}
+    </View>
+  )
+}
+
 function RacketScoreboard({
   matchId,
   sport,
@@ -1020,16 +1507,16 @@ function RacketScoreboard({
   onReset,
   onRenamePlayer,
 }: {
-  matchId: number
+  matchId: string
   sport: 'badminton' | 'pickleball'
   score: RacketScoreState
-  onAddPoint: (id: number, side: Side) => void
-  onSubtractPoint: (id: number, side: Side) => void
-  onWinGame: (id: number, side: Side) => void
-  onSwapServer: (id: number) => void
-  onToggleVisible: (id: number) => void
-  onReset: (id: number, sport: 'badminton' | 'pickleball') => void
-  onRenamePlayer: (id: number, side: Side, name: string) => void
+  onAddPoint: (id: string, side: Side) => void
+  onSubtractPoint: (id: string, side: Side) => void
+  onWinGame: (id: string, side: Side) => void
+  onSwapServer: (id: string) => void
+  onToggleVisible: (id: string) => void
+  onReset: (id: string, sport: 'badminton' | 'pickleball') => void
+  onRenamePlayer: (id: string, side: Side, name: string) => void
 }) {
   const unit = sport === 'badminton' ? 'Player' : 'Team'
 
@@ -1135,7 +1622,7 @@ function RacketScoreboard({
   )
 }
 
-const STATUS_LABEL: Record<MatchStatus, string> = {
+const STATUS_LABEL: Record<FootballClockStatus, string> = {
   not_started: 'Not started',
   live: 'Live',
   half_time: 'Half-time',
@@ -1153,15 +1640,15 @@ function FootballScoreboard({
   onReset,
   onRenameTeam,
 }: {
-  matchId: number
+  matchId: string
   score: FootballScoreState
-  onAddGoal: (id: number, side: Side) => void
-  onSubtractGoal: (id: number, side: Side) => void
-  onSetStatus: (id: number, status: MatchStatus) => void
-  onIncrementMinute: (id: number) => void
-  onToggleVisible: (id: number) => void
-  onReset: (id: number) => void
-  onRenameTeam: (id: number, side: Side, name: string) => void
+  onAddGoal: (id: string, side: Side) => void
+  onSubtractGoal: (id: string, side: Side) => void
+  onSetStatus: (id: string, status: FootballClockStatus) => void
+  onIncrementMinute: (id: string) => void
+  onToggleVisible: (id: string) => void
+  onReset: (id: string) => void
+  onRenameTeam: (id: string, side: Side, name: string) => void
 }) {
   return (
     <View className="border border-gray-200 rounded-xl p-4">
@@ -1299,7 +1786,7 @@ function AdminPanel() {
 
     try {
       const data = await adminLogin(email, password);
-
+      await SecureStore.setItemAsync("adminId", data.user.id.toString());
       router.replace("/adminDashboard");
     } catch (error: any) {
       if (error.response?.data?.message) {
@@ -1424,6 +1911,11 @@ function AdminPanel() {
 
 export default function Organisers() {
   const [activeTab, setActiveTab] = useState<TabKey>('capturer')
+  const [isCapturerLive, setIsCapturerLive] = useState(false)
+  const [isCommentatorLive, setIsCommentatorLive] = useState(false)
+  const [isBroadcasterJoined, setIsBroadcasterJoined] = useState(false)
+
+  const isAnyLiveOrJoined = isCapturerLive || isCommentatorLive || isBroadcasterJoined
 
   return (
     <View className="flex-1 bg-slate-950">
@@ -1434,13 +1926,13 @@ export default function Organisers() {
       >
 
         <View style={{ display: activeTab === 'capturer' ? 'flex' : 'none' }}>
-          <CapturerPanel />
+          <CapturerPanel onLiveChange={setIsCapturerLive} />
         </View>
         <View style={{ display: activeTab === 'commentator' ? 'flex' : 'none' }}>
-          <CommentatorPanel />
+          <CommentatorPanel onLiveChange={setIsCommentatorLive} />
         </View>
         <View style={{ display: activeTab === 'broadcaster' ? 'flex' : 'none' }}>
-          <BroadcasterPanel />
+          <BroadcasterPanel onJoinChange={setIsBroadcasterJoined} />
         </View>
         {activeTab === 'admin' && <AdminPanel />}
       </ScrollView>
@@ -1453,8 +1945,11 @@ export default function Organisers() {
             return (
               <Pressable
                 key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                className="flex-1 items-center py-1.5 active:opacity-60"
+                onPress={() => {
+                  if (isAnyLiveOrJoined && tab.key !== activeTab) return;
+                  setActiveTab(tab.key);
+                }}
+                className={`flex-1 items-center py-1.5 ${isAnyLiveOrJoined && tab.key !== activeTab ? 'opacity-30' : 'active:opacity-60'}`}
               >
                 <View
                   className={`w-10 h-10 rounded-xl items-center justify-center mb-1 ${

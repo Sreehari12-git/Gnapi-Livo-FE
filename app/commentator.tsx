@@ -7,8 +7,11 @@ import {
   MicOff,
   Circle,
   Square,
+  AlertTriangle,
 } from 'lucide-react-native'
+import { LiveKitRoom, useLocalParticipant, useTrackVolume } from '@livekit/react-native'
 import EventIdGate from './Eventidgate'
+import { fetchLiveKitToken } from './services/livekit'
 
 export default function Commentator() {
   const router = useRouter()
@@ -16,9 +19,10 @@ export default function Commentator() {
   const [identity, setIdentity] = useState('comm-jc2o4g')
   const [displayName, setDisplayName] = useState('Commentator')
   const [room, setRoom] = useState('live-switch')
-  const [isLive, setIsLive] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
-  const [micLevel, setMicLevel] = useState(0)
+
+  const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState('')
 
   if (!eventId) {
     return (
@@ -30,11 +34,26 @@ export default function Commentator() {
         accentBorder="border-purple-500/40"
         onSubmit={(id) => {
           setEventId(id)
-          setRoom(id) 
+          setRoom(id)
         }}
       />
     )
   }
+
+  const goLive = async () => {
+    setError('')
+    setConnecting(true)
+    try {
+      const result = await fetchLiveKitToken(identity, room, 'commentator')
+      setConnection(result)
+    } catch (err: any) {
+      setError(err.response?.data?.message ?? 'Could not start the commentary session.')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const stopLive = () => setConnection(null)
 
   return (
     <ScrollView
@@ -69,9 +88,9 @@ export default function Commentator() {
           <Text className="text-emerald-950 font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
         </View>
         <View className="flex-row items-center gap-1">
-          <View className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-600' : 'bg-slate-600'}`} />
+          <View className={`w-2 h-2 rounded-full ${connection ? 'bg-red-600' : 'bg-slate-600'}`} />
           <Text className="text-emerald-950 font-black text-xs">
-            {isLive ? (isMuted ? 'MUTED' : 'ON AIR') : 'IDLE'}
+            {connection ? 'ON AIR' : 'IDLE'}
           </Text>
         </View>
       </View>
@@ -83,157 +102,167 @@ export default function Commentator() {
         </View>
       </View>
 
+      {error !== '' && (
+        <View className="mx-6 mt-4 bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 flex-row items-center gap-2">
+          <AlertTriangle size={14} color="#f87171" />
+          <Text className="text-red-400 text-xs font-semibold flex-1">{error}</Text>
+        </View>
+      )}
+
       <View className="px-6 mt-4 gap-4">
 
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Identity</Text>
-            <TextInput
-              value={identity}
-              onChangeText={setIdentity}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="comm-identity"
-            />
+        {!connection && (
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Identity</Text>
+              <TextInput
+                value={identity}
+                onChangeText={setIdentity}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="comm-identity"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Display name</Text>
+              <TextInput
+                value={displayName}
+                onChangeText={setDisplayName}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="Your name"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Room</Text>
+              <TextInput
+                value={room}
+                onChangeText={setRoom}
+                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholder="room-name"
+              />
+            </View>
           </View>
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Display name</Text>
-            <TextInput
-              value={displayName}
-              onChangeText={setDisplayName}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="Your name"
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-2">Room</Text>
-            <TextInput
-              value={room}
-              onChangeText={setRoom}
-              className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              placeholder="room-name"
-            />
-          </View>
-        </View>
+        )}
 
         <View className="flex-row items-center gap-3">
           <Pressable
-            onPress={() => {
-              setIsLive(!isLive)
-              setIsMuted(false)         
-              setMicLevel(isLive ? 0 : 72)
-            }}
-            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${isLive ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'}`}
+            disabled={connecting}
+            onPress={connection ? stopLive : goLive}
+            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${connection ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'} ${connecting ? 'opacity-60' : ''}`}
           >
-            {isLive ? (
+            {connection ? (
               <Square size={14} color="#ffffff" fill="#ffffff" />
             ) : (
               <Circle size={14} color="#dc2626" fill="#dc2626" />
             )}
-            <Text className={`font-black text-sm ${isLive ? 'text-white' : 'text-slate-900'}`}>
-              {isLive ? 'Stop' : 'Go Live'}
+            <Text className={`font-black text-sm ${connection ? 'text-white' : 'text-slate-900'}`}>
+              {connecting ? 'Connecting…' : connection ? 'Stop' : 'Go Live'}
             </Text>
           </Pressable>
-
-          {isLive && (
-            <Pressable
-              onPress={() => {
-                setIsMuted(!isMuted)
-                setMicLevel(isMuted ? 72 : 0)  
-              }}
-              className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
-                isMuted
-                  ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
-                  : 'bg-slate-800 border-white/15 active:bg-slate-700'
-              }`}
-            >
-              {isMuted ? (
-                <MicOff size={15} color="#fb923c" />
-              ) : (
-                <Mic size={15} color="rgba(255,255,255,0.7)" />
-              )}
-              <Text className={`font-bold text-sm ${isMuted ? 'text-orange-400' : 'text-white/70'}`}>
-                {isMuted ? 'Unmute' : 'Mute'}
-              </Text>
-            </Pressable>
-          )}
-
-          <View className="flex-row items-center gap-2 px-3 py-2 rounded-full bg-slate-800 border border-white/10">
-            <View className={`w-2 h-2 rounded-full ${
-              isLive && !isMuted ? 'bg-red-500' :
-              isLive && isMuted  ? 'bg-orange-400' :
-              'bg-slate-500'
-            }`} />
-            <Text className="text-white/40 text-xs">
-              {isLive ? (isMuted ? 'muted' : 'on air') : 'idle'}
-            </Text>
-          </View>
         </View>
 
-        <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
-          <View className="flex-row justify-between items-center mb-3">
-            <Text className="text-white/60 text-sm font-semibold">Mic level</Text>
-            {isMuted ? (
-              <View className="flex-row items-center gap-1.5">
-                <MicOff size={13} color="rgba(255,255,255,0.4)" />
-                <Text className="text-white/40 text-sm">Muted</Text>
-              </View>
-            ) : (
-              <Text className="text-white/40 text-sm">{micLevel}%</Text>
-            )}
-          </View>
-          <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
-            <View
-              className={`h-2 rounded-full ${
-                isMuted ? 'bg-orange-400' :
-                micLevel > 80 ? 'bg-red-500' :
-                micLevel > 40 ? 'bg-yellow-400' :
-                'bg-emerald-500'
-              }`}
-              style={{ width: `${micLevel}%` }}
-            />
-          </View>
-          <View className="flex-row justify-between mt-2">
-            <Text className="text-white/20 text-xs">0%</Text>
-            <Text className="text-white/20 text-xs">50%</Text>
-            <Text className="text-white/20 text-xs">100%</Text>
-          </View>
-        </View>
-
-        <View className="flex-row gap-3">
-          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
-            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Room</Text>
-            <Text className="text-white font-bold text-sm">{room || '—'}</Text>
-          </View>
-          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
-            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Name</Text>
-            <Text className="text-white font-bold text-sm">{displayName || '—'}</Text>
-          </View>
-          <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
-            <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Status</Text>
-            <View className="flex-row items-center gap-1.5">
-              {isLive && isMuted && <MicOff size={13} color="#fb923c" />}
-              {isLive && !isMuted && (
-                <Circle size={9} color="#f87171" fill="#f87171" />
-              )}
-              {!isLive && (
-                <Circle size={9} color="rgba(255,255,255,0.4)" fill="rgba(255,255,255,0.4)" />
-              )}
-              <Text className={`font-bold text-sm ${
-                isLive && !isMuted ? 'text-red-400' :
-                isLive && isMuted  ? 'text-orange-400' :
-                'text-white/40'
-              }`}>
-                {isLive ? (isMuted ? 'Muted' : 'On Air') : 'Idle'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
+        {connection && (
+          <LiveKitRoom
+            serverUrl={connection.url}
+            token={connection.token}
+            connect
+            audio
+            onDisconnected={stopLive}
+            onError={(err) => setError(err.message)}
+            onMediaDeviceFailure={(failure) => setError(`Mic failed to start${failure ? `: ${failure}` : ''}. Check microphone permissions.`)}
+          >
+            <CommentatorLiveView room={room} displayName={displayName} />
+          </LiveKitRoom>
+        )}
       </View>
     </ScrollView>
   )
 }
 
+function CommentatorLiveView({ room, displayName }: { room: string; displayName: string }) {
+  const { localParticipant, microphoneTrack, lastMicrophoneError } = useLocalParticipant()
+  const micLevel = useTrackVolume(microphoneTrack?.track as any)
+  const [isMuted, setIsMuted] = useState(false)
+
+  const toggleMute = async () => {
+    await localParticipant.setMicrophoneEnabled(isMuted)
+    setIsMuted(!isMuted)
+  }
+
+  const levelPercent = Math.round(micLevel * 100)
+
+  return (
+    <View className="gap-4">
+      {lastMicrophoneError && (
+        <View className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3">
+          <Text className="text-red-400 text-xs font-semibold">Mic: {lastMicrophoneError.message}</Text>
+        </View>
+      )}
+
+      <View className="flex-row items-center gap-3">
+        <Pressable
+          onPress={toggleMute}
+          className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
+            isMuted
+              ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
+              : 'bg-slate-800 border-white/15 active:bg-slate-700'
+          }`}
+        >
+          {isMuted ? (
+            <MicOff size={15} color="#fb923c" />
+          ) : (
+            <Mic size={15} color="rgba(255,255,255,0.7)" />
+          )}
+          <Text className={`font-bold text-sm ${isMuted ? 'text-orange-400' : 'text-white/70'}`}>
+            {isMuted ? 'Unmute' : 'Mute'}
+          </Text>
+        </Pressable>
+
+        <View className="flex-row items-center gap-2 px-3 py-2 rounded-full bg-slate-800 border border-white/10">
+          <View className={`w-2 h-2 rounded-full ${isMuted ? 'bg-orange-400' : 'bg-red-500'}`} />
+          <Text className="text-white/40 text-xs">{isMuted ? 'muted' : 'on air'}</Text>
+        </View>
+      </View>
+
+      <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
+        <View className="flex-row justify-between items-center mb-3">
+          <Text className="text-white/60 text-sm font-semibold">Mic level</Text>
+          {isMuted ? (
+            <View className="flex-row items-center gap-1.5">
+              <MicOff size={13} color="rgba(255,255,255,0.4)" />
+              <Text className="text-white/40 text-sm">Muted</Text>
+            </View>
+          ) : (
+            <Text className="text-white/40 text-sm">{levelPercent}%</Text>
+          )}
+        </View>
+        <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <View
+            className={`h-2 rounded-full ${
+              isMuted ? 'bg-orange-400' : levelPercent > 80 ? 'bg-red-500' : levelPercent > 40 ? 'bg-yellow-400' : 'bg-emerald-500'
+            }`}
+            style={{ width: `${isMuted ? 0 : levelPercent}%` }}
+          />
+        </View>
+        <View className="flex-row justify-between mt-2">
+          <Text className="text-white/20 text-xs">0%</Text>
+          <Text className="text-white/20 text-xs">50%</Text>
+          <Text className="text-white/20 text-xs">100%</Text>
+        </View>
+      </View>
+
+      <View className="flex-row gap-3">
+        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+          <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Room</Text>
+          <Text className="text-white font-bold text-sm">{room || '—'}</Text>
+        </View>
+        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+          <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Name</Text>
+          <Text className="text-white font-bold text-sm">{displayName || '—'}</Text>
+        </View>
+      </View>
+    </View>
+  )
+}

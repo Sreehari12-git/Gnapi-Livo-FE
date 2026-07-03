@@ -1,23 +1,33 @@
 import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useRouter, type Href } from 'expo-router'
-import { Search, Plus, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight } from 'lucide-react-native'
+import { Search, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight } from 'lucide-react-native'
+import * as SecureStore from 'expo-secure-store'
 import { controlPanelLogin } from './services/auth'
+import { getEventById } from './services/event'
+import { listMatches } from './services/match'
 
-type Match = {
+type LiveMatch = {
   id: string
-  court: string
-  playerA: string
-  playerB: string
-  score?: string
-  finalScore?: string
+  sport: string
+  name: string
+}
+
+type PastMatch = {
+  id: string
+  sport: string
+  name: string
+  teamAName: string
+  teamBName: string
+  teamAScore: number
+  teamBScore: number
 }
 
 type EventData = {
   id: string
   name: string
-  liveMatches: Match[]
-  pastMatches: Match[]
+  liveMatches: LiveMatch[]
+  pastMatches: PastMatch[]
 }
 
 type RoleKey = 'viewer' | 'control-panel'
@@ -33,13 +43,53 @@ const ROLES: Role[] = [
   { key: 'control-panel', label: 'Control Panel', Icon: ShieldCheck },
 ]
 
-// Replace with your real data layer
-async function findEvent(_eventId: string): Promise<EventData | null> {
-  return null
+const RECENT_EVENT_IDS_KEY = 'recent-event-ids'
+const MAX_RECENT_EVENT_IDS = 10
+
+async function loadRecentEventIds(): Promise<string[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(RECENT_EVENT_IDS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
 }
 
-async function createEvent(eventId: string): Promise<EventData> {
-  return { id: eventId, name: `Event ${eventId}`, liveMatches: [], pastMatches: [] }
+async function saveRecentEventId(eventId: string): Promise<string[]> {
+  const current = await loadRecentEventIds()
+  const next = [eventId, ...current.filter((id) => id !== eventId)].slice(0, MAX_RECENT_EVENT_IDS)
+  await SecureStore.setItemAsync(RECENT_EVENT_IDS_KEY, JSON.stringify(next))
+  return next
+}
+
+async function findEvent(eventId: string): Promise<EventData | null> {
+  let eventResult
+  try {
+    eventResult = await getEventById(eventId)
+  } catch (err: any) {
+    if (err.response?.status === 404) return null
+    throw err
+  }
+
+  const event = eventResult.event
+  const matches = await listMatches(eventId, true)
+
+  return {
+    id: event.id,
+    name: event.name,
+    liveMatches: matches
+      .filter((m) => m.liveStatus === 'live')
+      .map((m) => ({ id: m.id, sport: m.sport, name: m.name })),
+    pastMatches: (event.matchHistories ?? []).map((h: any) => ({
+      id: h.id,
+      sport: h.sport,
+      name: h.name,
+      teamAName: h.teamAName,
+      teamBName: h.teamBName,
+      teamAScore: h.teamAScore,
+      teamBScore: h.teamBScore,
+    })),
+  }
 }
 
 export default function Home() {
@@ -90,36 +140,31 @@ function ViewerScreen() {
   const [searching, setSearching] = useState(false)
   const [searched, setSearched] = useState(false)
   const [event, setEvent] = useState<EventData | null>(null)
-  const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [recentIds, setRecentIds] = useState<string[]>([])
 
-  const handleSearch = async () => {
-    if (!eventId.trim()) return
+  useEffect(() => {
+    loadRecentEventIds().then(setRecentIds)
+  }, [])
+
+  const handleSearch = async (overrideId?: string) => {
+    const idToSearch = (overrideId ?? eventId).trim()
+    if (!idToSearch) return
     setSearching(true)
     setSearched(false)
     setError(null)
     try {
-      const result = await findEvent(eventId.trim())
+      const result = await findEvent(idToSearch)
       setEvent(result)
       setSearched(true)
+      setEventId(idToSearch)
+      if (result) {
+        setRecentIds(await saveRecentEventId(idToSearch))
+      }
     } catch {
       setError("Couldn't reach the server. Try again.")
     } finally {
       setSearching(false)
-    }
-  }
-
-  const handleAdd = async () => {
-    if (!eventId.trim()) return
-    setAdding(true)
-    setError(null)
-    try {
-      const created = await createEvent(eventId.trim())
-      setEvent(created)
-    } catch {
-      setError("Couldn't add that event. Try again.")
-    } finally {
-      setAdding(false)
     }
   }
 
@@ -175,13 +220,13 @@ function ViewerScreen() {
                 setEvent(null)
                 setError(null)
               }}
-              onSubmitEditing={handleSearch}
+              onSubmitEditing={() => handleSearch()}
               placeholder="Event ID"
               placeholderTextColor="rgba(255,255,255,0.3)"
               autoCapitalize="characters"
               autoCorrect={false}
               returnKeyType="search"
-              editable={!searching && !adding}
+              editable={!searching}
               className="flex-1 text-white py-4 pl-2.5 text-base font-semibold tracking-wide"
             />
             {eventId.length > 0 && (
@@ -195,7 +240,7 @@ function ViewerScreen() {
             )}
           </View>
           <Pressable
-            onPress={handleSearch}
+            onPress={() => handleSearch()}
             disabled={!eventId.trim() || searching}
             className="bg-orange-500 active:bg-orange-600 rounded-2xl w-14 items-center justify-center disabled:opacity-30"
           >
@@ -207,13 +252,28 @@ function ViewerScreen() {
           </Pressable>
         </View>
 
+        {!event && recentIds.length > 0 && (
+          <View className="mx-6 mb-2 flex-row flex-wrap gap-2">
+            {recentIds.map((id) => (
+              <Pressable
+                key={id}
+                onPress={() => handleSearch(id)}
+                className="bg-white/[0.06] active:bg-white/15 rounded-full px-3.5 py-2 border border-white/10 flex-row items-center gap-1.5"
+              >
+                <History size={11} color="rgba(255,255,255,0.4)" />
+                <Text className="text-white/60 text-xs font-bold">{id}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         {error && (
           <Text className="text-red-400 text-xs font-medium mx-6 mb-3">
             {error}
           </Text>
         )}
 
-        {/* Not found -> offer to add */}
+        {/* Not found */}
         {searched && !event && !searching && !error && (
           <View className="mx-6 mt-3 mb-2 bg-white/[0.05] rounded-3xl p-6 border border-white/10 items-center">
             <View className="w-12 h-12 rounded-full bg-white/10 items-center justify-center mb-4">
@@ -222,25 +282,9 @@ function ViewerScreen() {
             <Text className="text-white font-bold text-base mb-1.5 text-center">
               No event found
             </Text>
-            <Text className="text-white/40 text-sm text-center leading-relaxed mb-5 px-2">
-              Nothing matches ID "{eventId.trim()}". Double-check it, or add it as a new event.
+            <Text className="text-white/40 text-sm text-center leading-relaxed px-2">
+              Nothing matches ID "{eventId.trim()}". Double-check it and try again.
             </Text>
-            <Pressable
-              onPress={handleAdd}
-              disabled={adding}
-              className="bg-orange-500 active:bg-orange-600 rounded-2xl px-6 py-3.5 flex-row items-center gap-2 disabled:opacity-30"
-            >
-              {adding ? (
-                <ActivityIndicator color="#0A0E16" />
-              ) : (
-                <>
-                  <Plus size={18} color="#0A0E16" />
-                  <Text className="text-[#0A0E16] font-black text-sm">
-                    Add Event
-                  </Text>
-                </>
-              )}
-            </Pressable>
           </View>
         )}
 
@@ -281,8 +325,12 @@ function ViewerScreen() {
 
             {event.liveMatches.length > 0 ? (
               <View className="gap-3 mb-7">
-                {event.liveMatches.map((match: Match) => (
-                  <Link key={match.id} href={`/viewer/${match.id}` as Href} asChild>
+                {event.liveMatches.map((match) => (
+                  <Link
+                    key={match.id}
+                    href={{ pathname: '/viewer/[matchId]', params: { matchId: match.id, eventId: event.id } } as Href}
+                    asChild
+                  >
                     <Pressable className="bg-white/[0.06] active:bg-white/[0.12] rounded-2xl p-4 border border-orange-500/20">
                       <View className="flex-row items-center justify-between mb-2.5">
                         <View className="bg-red-500/15 rounded-full px-2.5 py-1 flex-row items-center gap-1.5">
@@ -292,14 +340,11 @@ function ViewerScreen() {
                           </Text>
                         </View>
                         <Text className="text-white/35 text-xs font-bold tracking-wide uppercase">
-                          {match.court}
+                          {match.sport}
                         </Text>
                       </View>
                       <Text className="text-white font-bold text-base mb-1.5">
-                        {match.playerA} vs {match.playerB}
-                      </Text>
-                      <Text className="text-orange-400 text-lg font-black tracking-wide">
-                        {match.score}
+                        {match.name}
                       </Text>
                     </Pressable>
                   </Link>
@@ -329,28 +374,26 @@ function ViewerScreen() {
 
             {event.pastMatches.length > 0 ? (
               <View className="gap-3">
-                {event.pastMatches.map((match: Match) => (
-                  <Link key={match.id} href={`/viewer/${match.id}` as Href} asChild>
-                    <Pressable className="bg-white/[0.03] active:bg-white/[0.08] rounded-2xl p-4 border border-white/8">
-                      <View className="flex-row items-center justify-between mb-2.5">
-                        <View className="flex-row items-center gap-1.5">
-                          <Trophy size={12} color="rgba(255,255,255,0.3)" />
-                          <Text className="text-white/35 text-[10px] font-black tracking-wide">
-                            FINISHED
-                          </Text>
-                        </View>
-                        <Text className="text-white/35 text-xs font-bold tracking-wide uppercase">
-                          {match.court}
+                {event.pastMatches.map((match) => (
+                  <View key={match.id} className="bg-white/[0.03] rounded-2xl p-4 border border-white/8">
+                    <View className="flex-row items-center justify-between mb-2.5">
+                      <View className="flex-row items-center gap-1.5">
+                        <Trophy size={12} color="rgba(255,255,255,0.3)" />
+                        <Text className="text-white/35 text-[10px] font-black tracking-wide">
+                          FINISHED
                         </Text>
                       </View>
-                      <Text className="text-white/80 font-bold text-base mb-1">
-                        {match.playerA} vs {match.playerB}
+                      <Text className="text-white/35 text-xs font-bold tracking-wide uppercase">
+                        {match.sport}
                       </Text>
-                      <Text className="text-white/40 text-sm font-semibold">
-                        {match.finalScore}
-                      </Text>
-                    </Pressable>
-                  </Link>
+                    </View>
+                    <Text className="text-white/80 font-bold text-base mb-1">
+                      {match.name}
+                    </Text>
+                    <Text className="text-white/40 text-sm font-semibold">
+                      {match.teamAName} {match.teamAScore} - {match.teamBScore} {match.teamBName}
+                    </Text>
+                  </View>
                 ))}
               </View>
             ) : (
@@ -390,6 +433,7 @@ function ControlPanelScreen() {
     setLoading(true)
     try {
       const data = await controlPanelLogin(email,password);
+      await SecureStore.setItemAsync("adminId", data.user.adminId.toString());
       router.push('/organisers')
     }  catch (error: any) {
         if (error.response) {
