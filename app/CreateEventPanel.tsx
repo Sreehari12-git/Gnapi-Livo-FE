@@ -5,6 +5,19 @@ import { createEvent } from './services/event'
 import * as SecureStore from 'expo-secure-store'
 import { CalendarPlus, ChevronLeft, Shield } from 'lucide-react-native'
 
+const CATEGORIES = [
+  { value: 'sports', label: 'Sports' },
+  { value: 'wedding', label: 'Wedding' },
+  { value: 'conference', label: 'Conference' },
+  { value: 'other', label: 'Other' },
+]
+
+const SPORTS = [
+  { value: 'pickleball', label: 'Pickleball' },
+  { value: 'badminton', label: 'Badminton' },
+  { value: 'football', label: 'Football' },
+]
+
 function Eyebrow({ label }: { label: string }) {
   return (
     <View className="flex-row items-center gap-2 mb-3">
@@ -75,9 +88,44 @@ function PrimaryButton({
   )
 }
 
+function ChipSelector<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[]
+  value: T
+  onChange: (v: T) => void
+}) {
+  return (
+    <View className="flex-row flex-wrap gap-2">
+      {options.map(opt => {
+        const active = opt.value === value
+        return (
+          <Pressable
+            key={opt.value}
+            onPress={() => onChange(opt.value)}
+            className={`rounded-2xl px-4 py-2.5 border ${
+              active
+                ? 'bg-orange-500 border-orange-500'
+                : 'bg-[#111623] border-white/10'
+            }`}
+          >
+            <Text className={`text-sm font-semibold ${active ? 'text-[#0A0E16]' : 'text-white/60'}`}>
+              {opt.label}
+            </Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
 export default function CreateEventPanel() {
   const router = useRouter()
   const [eventName, setEventName] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('sports')
+  const [selectedSport, setSelectedSport] = useState('pickleball')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -99,7 +147,8 @@ export default function CreateEventPanel() {
         return
       }
 
-      const data = await createEvent(eventName.trim(), Number(adminId))
+      const sport = selectedCategory === 'sports' ? selectedSport : undefined
+      const data = await createEvent(eventName.trim(), Number(adminId), selectedCategory, sport)
 
       await SecureStore.setItemAsync('eventId', data.event.id)
 
@@ -139,14 +188,14 @@ export default function CreateEventPanel() {
         <Eyebrow label="Event Setup" />
         <Text className="text-white text-5xl font-black mb-2">Create Event</Text>
         <Text className="text-white/40 text-base mb-6">
-          Set up a new live event and assign it a room.
+          Set up a new live event. The broadcaster will use this event's ID to join.
         </Text>
 
         <View className="h-px bg-white/5 mb-8" />
 
         <Banner type="error" message={error} />
 
-        <View className="mb-4">
+        <View className="mb-6">
           <FieldLabel>Event name</FieldLabel>
           <DarkInput
             value={eventName}
@@ -154,10 +203,36 @@ export default function CreateEventPanel() {
               setEventName(t)
               setError('')
             }}
-            placeholder="e.g. Spring Finals Night"
+            placeholder="e.g. Company Pickleball Tournament"
             editable={!loading}
           />
         </View>
+
+        <View className="mb-6">
+          <FieldLabel>Category</FieldLabel>
+          <ChipSelector
+            options={CATEGORIES}
+            value={selectedCategory}
+            onChange={setSelectedCategory}
+          />
+          <Text className="text-white/25 text-xs mt-2">
+            Determines what tools are shown to the broadcaster.
+          </Text>
+        </View>
+
+        {selectedCategory === 'sports' && (
+          <View className="mb-6">
+            <FieldLabel>Sport</FieldLabel>
+            <ChipSelector
+              options={SPORTS}
+              value={selectedSport}
+              onChange={setSelectedSport}
+            />
+            <Text className="text-white/25 text-xs mt-2">
+              The broadcaster won't need to choose a sport — this is locked to the event.
+            </Text>
+          </View>
+        )}
 
         <PrimaryButton
           label={loading ? 'Creating...' : 'Create Event'}
@@ -169,4 +244,3 @@ export default function CreateEventPanel() {
     </View>
   )
 }
-

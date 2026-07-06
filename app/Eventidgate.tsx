@@ -10,7 +10,7 @@ type EventIdGateProps = {
   accentIcon: React.ReactNode
   accentBg: string
   accentBorder: string
-  onSubmit: (eventId: string) => void
+  onSubmit: (eventId: string, event?: any) => void
   initialValue?: string
 }
 
@@ -36,8 +36,8 @@ export default function EventIdGate({
               return;
             }
     
-            await validateSession(Number(adminId), trimmed);
-            onSubmit(trimmed);
+            const result = await validateSession(Number(adminId), trimmed);
+            onSubmit(trimmed, result?.event);
           } catch (error: any) {
             if (error.response?.data?.message) {
               setError(error.response.data.message);

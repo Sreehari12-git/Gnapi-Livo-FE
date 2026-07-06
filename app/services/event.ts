@@ -2,11 +2,15 @@ import { api } from "./api";
 
 export const createEvent = async (
   name: string,
-  adminId: number
+  adminId: number,
+  category: string,
+  sport?: string,
 ) => {
   const response = await api.post("/event/create", {
     name,
     adminId,
+    category,
+    sport,
   });
 
   return response.data;

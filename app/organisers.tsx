@@ -700,13 +700,16 @@ interface MatchState {
 
 function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean) => void }) {
   const [eventId, setEventId] = useState<string | null>(null)
+  const [eventInfo, setEventInfo] = useState<{ name?: string; category: string; sport?: string | null } | null>(null)
 
   const [identity, setIdentity] = useState('bcast-8x585u')
   const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [joinError, setJoinError] = useState('')
   const isJoined = connection !== null
-  const [selectedSport, setSelectedSport] = useState<Sport>('badminton')
+  // Sport is derived from the event — no manual selection needed
+  const eventSport: Sport = (eventInfo?.sport as Sport) ?? 'badminton'
+  const isSportsEvent = (eventInfo?.category ?? 'sports') === 'sports'
   const [matches, setMatches] = useState<MatchState[]>([])
   const [assigningMatchId, setAssigningMatchId] = useState<string | null>(null)
   const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[] }>({
@@ -763,22 +766,25 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
         accentIcon={<Radio size={20} color="#facc15" />}
         accentBg="bg-yellow-400/20"
         accentBorder="border-yellow-400/40"
-        onSubmit={(id) => setEventId(id)}
+        onSubmit={(id, event) => {
+          setEventId(id)
+          setEventInfo(event ? { name: event.name, category: event.category ?? 'sports', sport: event.sport } : null)
+        }}
       />
     )
   }
 
   const handleAddMatch = async () => {
-    const nextSportNumber = sportCounters[selectedSport] + 1
-    const name = `${SPORT_LABELS[selectedSport]} Match ${nextSportNumber}`
+    const nextSportNumber = sportCounters[eventSport] + 1
+    const name = `${SPORT_LABELS[eventSport]} Match ${nextSportNumber}`
     try {
-      const created = await createMatch({ eventId, sport: selectedSport, name })
-      setSportCounters(prev => ({ ...prev, [selectedSport]: nextSportNumber }))
+      const created = await createMatch({ eventId, sport: eventSport, name })
+      setSportCounters(prev => ({ ...prev, [eventSport]: nextSportNumber }))
       setMatches(prev => [
         ...prev,
         {
           id: created.id,
-          sport: selectedSport,
+          sport: eventSport,
           name: created.name,
           liveStatus: created.liveStatus as MatchLiveStatus,
           liveCapturerIdentity: created.liveCapturerIdentity,
@@ -788,8 +794,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
           audioOn: true,
           commentaryMuted: false,
           winner: null,
-          racketScore: selectedSport === 'football' ? undefined : createRacketScore(selectedSport),
-          footballScore: selectedSport === 'football' ? createFootballScore() : undefined,
+          racketScore: eventSport === 'football' ? undefined : createRacketScore(eventSport),
+          footballScore: eventSport === 'football' ? createFootballScore() : undefined,
         },
       ])
     } catch (err: any) {
@@ -1048,7 +1054,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
     <View>
       <View className="bg-emerald-900 px-6 pt-6 pb-6">
         <Pressable
-          onPress={() => setEventId(null)}
+          onPress={() => { setEventId(null); setEventInfo(null) }}
           className="flex-row items-center gap-1.5 mb-4 self-start active:opacity-60"
         >
           <ChevronLeft size={16} color="rgba(255,255,255,0.6)" />
@@ -1062,7 +1068,9 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
           <Text className="text-white text-3xl font-black">Broadcaster</Text>
         </View>
         <Text className="text-white/50 text-sm ml-1 mt-1">
-          Group capturers into matches, pick which feed goes live per match, and control each match's scoreboard.
+          {isSportsEvent
+            ? 'Group capturers into matches, pick which feed goes live per match, and control each match\'s scoreboard.'
+            : 'Manage camera and audio feeds for your live event.'}
         </Text>
       </View>
 
@@ -1100,29 +1108,24 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
         </View>
 
         <View className="px-6 mt-4">
-          <Text className="text-gray-500 text-xs mb-1">Sport</Text>
-          <View className="flex-row gap-2">
-            {(Object.keys(SPORT_LABELS) as Sport[]).map(sport => {
-              const isActive = selectedSport === sport
-              return (
-                <Pressable
-                  key={sport}
-                  onPress={() => setSelectedSport(sport)}
-                  className={`flex-1 rounded-lg px-3 py-2.5 items-center border ${
-                    isActive ? 'bg-gray-900 border-gray-900' : 'bg-white border-gray-200'
-                  }`}
-                >
-                  <Text className={`text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-600'}`}>
-                    {SPORT_LABELS[sport]}
-                  </Text>
-                </Pressable>
-              )
-            })}
+          <View className="flex-row flex-wrap gap-2">
+            {eventInfo?.name && (
+              <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200">
+                <Text className="text-slate-500 text-xs">Event</Text>
+                <Text className="text-slate-800 text-xs font-bold">{eventInfo.name}</Text>
+              </View>
+            )}
+            <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200">
+              <Text className="text-slate-500 text-xs">Category</Text>
+              <Text className="text-slate-800 text-xs font-bold capitalize">{eventInfo?.category ?? 'sports'}</Text>
+            </View>
+            {isSportsEvent && (
+              <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
+                <Text className="text-emerald-600 text-xs">Sport</Text>
+                <Text className="text-emerald-800 text-xs font-bold">{SPORT_LABELS[eventSport] ?? eventSport}</Text>
+              </View>
+            )}
           </View>
-          <Text className="text-gray-400 text-xs mt-1">
-            New matches added below will use the {SPORT_LABELS[selectedSport]} scoreboard. This will be{' '}
-            {SPORT_LABELS[selectedSport]} Match {sportCounters[selectedSport] + 1}.
-          </Text>
         </View>
 
         {joinError !== '' && (
@@ -1147,20 +1150,24 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                 <Text className="text-white font-semibold text-sm">Disconnect</Text>
               </Pressable>
 
-              <Pressable
-                onPress={handleAddMatch}
-                className="border border-gray-300 rounded-xl px-4 py-2.5 flex-row items-center gap-1.5"
-              >
-                <Plus size={14} color="#111" />
-                <Text className="text-black font-semibold text-sm">Add match</Text>
-              </Pressable>
+              {isSportsEvent && (
+                <>
+                  <Pressable
+                    onPress={handleAddMatch}
+                    className="border border-gray-300 rounded-xl px-4 py-2.5 flex-row items-center gap-1.5"
+                  >
+                    <Plus size={14} color="#111" />
+                    <Text className="text-black font-semibold text-sm">Add match</Text>
+                  </Pressable>
 
-              <View className="flex-row items-center gap-1.5">
-                <View className="w-2 h-2 rounded-full bg-yellow-400" />
-                <Text className="text-gray-400 text-xs">
-                  {matches.length} match(es)
-                </Text>
-              </View>
+                  <View className="flex-row items-center gap-1.5">
+                    <View className="w-2 h-2 rounded-full bg-yellow-400" />
+                    <Text className="text-gray-400 text-xs">
+                      {matches.length} match(es)
+                    </Text>
+                  </View>
+                </>
+              )}
             </>
           ) : (
             <Pressable
@@ -1209,12 +1216,12 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
           </LiveKitRoom>
         )}
 
-        {isJoined && (
+        {isJoined && isSportsEvent && (
           <View className="px-6 mt-6 pb-6 gap-4">
 
             {matches.length === 0 ? (
               <Text className="text-center text-gray-400 text-sm mt-2">
-                No matches yet. Pick a sport above and click <Text className="font-bold text-gray-600">Add match</Text> to create one.
+                No matches yet. Click <Text className="font-bold text-gray-600">Add match</Text> to create one.
               </Text>
             ) : (
               matches.map(match => {
