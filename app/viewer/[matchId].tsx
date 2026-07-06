@@ -1,5 +1,5 @@
 import { View, Text, Pressable, ScrollView } from 'react-native'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Radio, LogOut, Mic, AlertTriangle, ChevronLeft } from 'lucide-react-native'
 import { LiveKitRoom, VideoTrack, useDataChannel, useRemoteParticipants, useTracks } from '@livekit/react-native'
@@ -71,7 +71,6 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   const participants = useRemoteParticipants()
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
   const [match, setMatch] = useState<Match | null>(null)
-  const subscribedRef = useRef<{ capturer?: string; commentator?: string }>({})
 
   useEffect(() => {
     getMatch(matchId).then(setMatch).catch(() => {})
@@ -95,35 +94,23 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   })
 
   useEffect(() => {
-    const prev = subscribedRef.current
-    const nextCapturer = match?.liveCapturerIdentity ?? undefined
-    const nextCommentator = match?.liveCommentatorIdentity ?? undefined
+    const desiredCapturer = match?.liveCapturerIdentity ?? null
+    const desiredCommentator = match?.liveCommentatorIdentity ?? null
 
-    if (prev.capturer !== nextCapturer) {
-      if (prev.capturer) {
-        const p = participants.find((p) => p.identity === prev.capturer)
-        p?.getTrackPublication(Track.Source.Camera)?.setSubscribed(false)
-        p?.getTrackPublication(Track.Source.Microphone)?.setSubscribed(false)
-      }
-      if (nextCapturer) {
-        const p = participants.find((p) => p.identity === nextCapturer)
-        p?.getTrackPublication(Track.Source.Camera)?.setSubscribed(true)
-        p?.getTrackPublication(Track.Source.Microphone)?.setSubscribed(true)
-      }
-    }
+    participants.forEach((p) => {
+      const isCapturer = p.identity === desiredCapturer
+      const wantsMic = isCapturer || p.identity === desiredCommentator
 
-    if (prev.commentator !== nextCommentator) {
-      if (prev.commentator) {
-        const p = participants.find((p) => p.identity === prev.commentator)
-        p?.getTrackPublication(Track.Source.Microphone)?.setSubscribed(false)
+      const cameraPub = p.getTrackPublication(Track.Source.Camera)
+      if (cameraPub && cameraPub.isSubscribed !== isCapturer) {
+        cameraPub.setSubscribed(isCapturer)
       }
-      if (nextCommentator) {
-        const p = participants.find((p) => p.identity === nextCommentator)
-        p?.getTrackPublication(Track.Source.Microphone)?.setSubscribed(true)
-      }
-    }
 
-    subscribedRef.current = { capturer: nextCapturer, commentator: nextCommentator }
+      const micPub = p.getTrackPublication(Track.Source.Microphone)
+      if (micPub && micPub.isSubscribed !== wantsMic) {
+        micPub.setSubscribed(wantsMic)
+      }
+    })
   }, [match?.liveCapturerIdentity, match?.liveCommentatorIdentity, participants])
 
   const videoTrackRef = tracks.find(
