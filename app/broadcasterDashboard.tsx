@@ -1,5 +1,5 @@
-import { View, Text, Pressable, TextInput, ScrollView } from 'react-native'
-import { useEffect, useState } from 'react'
+import { View, Text, Pressable, TextInput, ScrollView, Linking } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'expo-router'
 import {
   ChevronLeft,
@@ -23,15 +23,19 @@ import {
   AlertTriangle,
   ChevronDown,
 } from 'lucide-react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { LiveKitRoom, useRemoteParticipants, useTracks, VideoTrack } from '@livekit/react-native'
 import { Track } from 'livekit-client'
 import { fetchLiveKitToken, parseParticipantRole } from './services/livekit'
 import {
   createMatch,
   listMatches,
+  getMatch,
   updateMatch as updateMatchApi,
   deleteMatch as deleteMatchApi,
   setMatchLiveSelection,
+  getYoutubeAuthUrl,
+  stopYoutubeStream,
 } from './services/match'
 import EventIdGate from './Eventidgate'
 
@@ -99,6 +103,8 @@ interface MatchState {
   liveStatus: MatchLiveStatus
   liveCapturerIdentity: string | null
   liveCommentatorIdentity: string | null
+  ytWhipUrl: string | null
+  ytLiveUrl: string | null
   audioOn: boolean
   commentaryMuted: boolean
   winner: Side | null
@@ -127,6 +133,8 @@ export default function BroadcasterDashboard() {
     badminton: 0,
     football: 0,
   })
+  const [ytPollingMatchId, setYtPollingMatchId] = useState<string | null>(null)
+  const ytPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refreshMatches = async () => {
     if (!eventId) return
@@ -142,6 +150,8 @@ export default function BroadcasterDashboard() {
           liveStatus: sm.liveStatus as MatchLiveStatus,
           liveCapturerIdentity: sm.liveCapturerIdentity,
           liveCommentatorIdentity: sm.liveCommentatorIdentity,
+          ytWhipUrl: sm.ytWhipUrl,
+          ytLiveUrl: sm.ytLiveUrl,
           audioOn: existing?.audioOn ?? true,
           commentaryMuted: existing?.commentaryMuted ?? false,
           winner: existing?.winner ?? null,
@@ -187,6 +197,8 @@ export default function BroadcasterDashboard() {
           liveStatus: created.liveStatus as MatchLiveStatus,
           liveCapturerIdentity: created.liveCapturerIdentity,
           liveCommentatorIdentity: created.liveCommentatorIdentity,
+          ytWhipUrl: created.ytWhipUrl,
+          ytLiveUrl: created.ytLiveUrl,
           audioOn: true,
           commentaryMuted: false,
           winner: null,
@@ -370,6 +382,8 @@ export default function BroadcasterDashboard() {
         liveStatus: updated.liveStatus as MatchLiveStatus,
         liveCapturerIdentity: updated.liveCapturerIdentity,
         liveCommentatorIdentity: updated.liveCommentatorIdentity,
+        ytWhipUrl: updated.ytWhipUrl,
+        ytLiveUrl: updated.ytLiveUrl,
       }))
     } catch (err: any) {
       setJoinError(err.response?.data?.message ?? 'Could not end match.')
@@ -386,6 +400,52 @@ export default function BroadcasterDashboard() {
 
   const renameMatch = (id: string, name: string) => {
     updateMatch(id, m => ({ ...m, name }))
+  }
+
+  const handleYoutubeStart = async (matchId: string) => {
+    try {
+      setYtPollingMatchId(matchId)
+      const authUrl = await getYoutubeAuthUrl(matchId)
+      await WebBrowser.openBrowserAsync(authUrl)
+      // Poll for ytLiveUrl after browser is dismissed
+      let attempts = 0
+      ytPollRef.current = setInterval(async () => {
+        attempts++
+        try {
+          const updated = await getMatch(matchId)
+          if (updated.ytLiveUrl) {
+            updateMatch(matchId, m => ({ ...m, ytWhipUrl: updated.ytWhipUrl, ytLiveUrl: updated.ytLiveUrl }))
+            clearInterval(ytPollRef.current!)
+            ytPollRef.current = null
+            setYtPollingMatchId(null)
+          }
+        } catch (pollErr: any) {
+          if (pollErr?.response?.status === 404) {
+            clearInterval(ytPollRef.current!)
+            ytPollRef.current = null
+            setYtPollingMatchId(null)
+            return
+          }
+        }
+        if (attempts >= 15) {
+          clearInterval(ytPollRef.current!)
+          ytPollRef.current = null
+          setYtPollingMatchId(null)
+        }
+      }, 2000)
+    } catch (err: any) {
+      setYtPollingMatchId(null)
+      setJoinError(err.response?.data?.message ?? 'Could not start YouTube stream.')
+    }
+  }
+
+  const handleYoutubeStop = async (matchId: string) => {
+    try {
+      const updated = await stopYoutubeStream(matchId)
+      updateMatch(matchId, m => ({ ...m, ytWhipUrl: updated.ytWhipUrl, ytLiveUrl: updated.ytLiveUrl }))
+    } catch (err: any) {
+      setJoinError(err.response?.data?.message ?? 'Could not stop YouTube stream.')
+    }
   }
 
   const getNames = (match: MatchState): { nameA: string; nameB: string } => {
@@ -526,6 +586,8 @@ export default function BroadcasterDashboard() {
             onAssignCommentator={assignCommentatorToMatch}
             onRosterChange={(capturers, commentators) => setRoster({ capturers, commentators })}
           />
+          {/* Manages one WHIP → YouTube connection per match that has ytWhipUrl set */}
+          <BroadcasterWhipManager matches={matches} />
         </LiveKitRoom>
       )}
 
@@ -592,6 +654,44 @@ export default function BroadcasterDashboard() {
                       </Pressable>
                     </View>
                   </View>
+
+                  {/* YouTube Live — full-width row so it's always visible on phone screens */}
+                  {!isEnded && (
+                    <Pressable
+                      onPress={() =>
+                        match.ytLiveUrl
+                          ? handleYoutubeStop(match.id)
+                          : handleYoutubeStart(match.id)
+                      }
+                      disabled={ytPollingMatchId === match.id}
+                      className={`rounded-xl px-4 py-3 flex-row items-center justify-center gap-2 ${
+                        match.ytLiveUrl
+                          ? 'bg-red-600'
+                          : 'bg-gray-900'
+                      } ${ytPollingMatchId === match.id ? 'opacity-50' : ''}`}
+                    >
+                      <Text className="text-white text-xs font-black tracking-widest">YT</Text>
+                      <Text className="text-white text-sm font-semibold">
+                        {ytPollingMatchId === match.id
+                          ? 'Authenticating with YouTube…'
+                          : match.ytLiveUrl
+                          ? 'Stop YouTube Live'
+                          : 'Go Live on YouTube'}
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {match.ytLiveUrl && (
+                    <Pressable
+                      onPress={() => Linking.openURL(match.ytLiveUrl!)}
+                      className="flex-row items-center gap-2 border border-red-200 bg-red-50 rounded-xl px-4 py-2.5"
+                    >
+                      <View className="w-2 h-2 rounded-full bg-red-500" />
+                      <Text className="text-red-600 text-xs font-semibold flex-1">
+                        Live on YouTube — tap to open
+                      </Text>
+                    </Pressable>
+                  )}
 
                   {!isEnded && (
                     <View className="border border-blue-100 bg-blue-50/40 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
@@ -704,6 +804,138 @@ export default function BroadcasterDashboard() {
 
     </ScrollView>
   )
+}
+
+type WhipSession = {
+  pc: any
+  videoSender: any
+  audioSender: any
+}
+
+/**
+ * Invisible component (renders null) that lives inside LiveKitRoom.
+ * For every match that has ytWhipUrl set, it opens one WebRTC WHIP connection
+ * to YouTube and forwards the capturer's video + commentator's (or capturer's) audio.
+ * Uses replaceTrack() when the assigned capturer/commentator changes.
+ * Closes the connection when ytWhipUrl is cleared (match ended or YT stopped).
+ */
+function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
+  const allTracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
+  const sessionsRef = useRef<Map<string, WhipSession>>(new Map())
+
+  const getVideoMST = (capturerIdentity: string | null): any => {
+    if (!capturerIdentity) return null
+    const ref = allTracks.find(
+      t => t.participant.identity === capturerIdentity && t.source === Track.Source.Camera,
+    )
+    return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
+  }
+
+  const getAudioMST = (commentatorIdentity: string | null, capturerIdentity: string | null): any => {
+    const identity = commentatorIdentity || capturerIdentity
+    if (!identity) return null
+    const ref = allTracks.find(
+      t => t.participant.identity === identity && t.source === Track.Source.Microphone,
+    )
+    return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
+  }
+
+  // Derived key — changes when any match gains/loses a ytWhipUrl
+  const ytKey = matches.map(m => `${m.id}=${m.ytWhipUrl ?? ''}`).join('|')
+
+  // Open / close WHIP sessions as ytWhipUrl appears or disappears per match
+  useEffect(() => {
+    const desired = new Map(
+      matches
+        .filter(m => m.ytWhipUrl && m.liveStatus !== 'ended')
+        .map(m => [m.id, m]),
+    )
+
+    // Close sessions that are no longer needed
+    for (const [id, session] of sessionsRef.current.entries()) {
+      if (!desired.has(id)) {
+        try { session.pc.close() } catch {}
+        sessionsRef.current.delete(id)
+      }
+    }
+
+    // Open sessions for newly active matches
+    for (const [id, match] of desired.entries()) {
+      if (!sessionsRef.current.has(id)) {
+        void openSession(match)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ytKey])
+
+  // Replace tracks whenever the capturer/commentator assignment or the available tracks change
+  const assignKey = matches
+    .map(m => `${m.id}:${m.liveCapturerIdentity ?? ''}:${m.liveCommentatorIdentity ?? ''}`)
+    .join('|')
+
+  useEffect(() => {
+    for (const match of matches) {
+      const session = sessionsRef.current.get(match.id)
+      if (!session) continue
+      try {
+        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentity))
+        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentity, match.liveCapturerIdentity))
+      } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTracks, assignKey])
+
+  async function openSession(match: MatchState) {
+    try {
+      const RTCPeerConnection = (globalThis as any).RTCPeerConnection
+      const RTCSessionDescription = (globalThis as any).RTCSessionDescription
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      })
+
+      // sendonly transceivers — no track initially = black screen / silent audio
+      const videoTx = pc.addTransceiver('video', { direction: 'sendonly' })
+      const audioTx = pc.addTransceiver('audio', { direction: 'sendonly' })
+
+      // Wire up tracks if capturer/commentator already assigned when stream starts
+      const videoMST = getVideoMST(match.liveCapturerIdentity)
+      const audioMST = getAudioMST(match.liveCommentatorIdentity, match.liveCapturerIdentity)
+      if (videoMST) videoTx.sender.replaceTrack(videoMST)
+      if (audioMST) audioTx.sender.replaceTrack(audioMST)
+
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+
+      // WHIP handshake: POST SDP offer, receive SDP answer from YouTube
+      const res = await fetch(match.ytWhipUrl!, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: offer.sdp,
+      })
+      if (!res.ok) throw new Error(`WHIP ${res.status}`)
+      const answerSdp = await res.text()
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }))
+
+      sessionsRef.current.set(match.id, {
+        pc,
+        videoSender: videoTx.sender,
+        audioSender: audioTx.sender,
+      })
+    } catch (err) {
+      // Session will be retried next time ytKey changes (e.g. user clicks YT button again)
+    }
+  }
+
+  // Cleanup all connections when broadcaster disconnects
+  useEffect(() => () => {
+    for (const s of sessionsRef.current.values()) {
+      try { s.pc.close() } catch {}
+    }
+    sessionsRef.current.clear()
+  }, [])
+
+  return null
 }
 
 function BroadcasterLobbies({

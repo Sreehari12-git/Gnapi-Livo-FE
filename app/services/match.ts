@@ -8,6 +8,10 @@ export type Match = {
   liveStatus: string
   liveCapturerIdentity: string | null
   liveCommentatorIdentity: string | null
+  ytBroadcastId: string | null
+  ytStreamId: string | null
+  ytWhipUrl: string | null
+  ytLiveUrl: string | null
   createdAt: string
   updatedAt: string
 }
@@ -53,5 +57,15 @@ export const setMatchLiveSelection = async (
   payload: { liveCapturerIdentity?: string | null; liveCommentatorIdentity?: string | null }
 ) => {
   const response = await api.post(`/matches/${id}/live-selection`, payload)
+  return response.data as Match
+}
+
+export const getYoutubeAuthUrl = async (matchId: string): Promise<string> => {
+  const response = await api.get('/youtube/auth-url', { params: { matchId } })
+  return (response.data as { authUrl: string }).authUrl
+}
+
+export const stopYoutubeStream = async (matchId: string): Promise<Match> => {
+  const response = await api.post(`/matches/${matchId}/youtube/stop`)
   return response.data as Match
 }
