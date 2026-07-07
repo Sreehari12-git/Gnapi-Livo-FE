@@ -18,7 +18,7 @@ import * as SecureStore from "expo-secure-store";
 export default function ControlPanelRegister() {
   const router = useRouter()
   const [name, setName] = useState('')
-  const [username, setUsername] = useState('')
+  // const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -28,7 +28,7 @@ export default function ControlPanelRegister() {
 
   const validate = () => {
     if (!name.trim()) return 'Enter your full name.'
-    if (!username.trim()) return 'Choose a username.'
+    // if (!username.trim()) return 'Choose a username.'
     if (!email.trim()) return 'Enter your email address.'
     if (!password.trim()) return 'Enter a password.'
     if (password !== confirmPassword) return "Passwords don't match."
@@ -83,7 +83,7 @@ export default function ControlPanelRegister() {
             Create Account
           </Text>
           <Text className="text-white/40 text-sm mt-2 text-center leading-relaxed px-6">
-            Step 1 of 2: Setup your security credentials
+            Step 3 of 3: Setup your security credentials
           </Text>
         </View>
 

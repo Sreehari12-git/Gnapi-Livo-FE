@@ -32,7 +32,7 @@ const handleContinue = async () => {
   try {
     const data = await adminRegister(email, password);
     await SecureStore.setItemAsync("adminId", data.user.id.toString());    
-    router.push("/controlPanelRegister");
+    router.push("/subscriptionSelect");
   } catch (err: any) {
     if (err.response) {
       setError(err.response.data.message);
@@ -62,7 +62,7 @@ const handleContinue = async () => {
           <View className="flex-row items-center gap-2 mb-2">
             <View className="w-1.5 h-1.5 rounded-full bg-orange-500" />
             <Text className="text-orange-500 text-xs font-extrabold tracking-[3px] uppercase">
-              Step 1 of 2
+              Step 1 of 3
             </Text>
           </View>
           <Text className="text-white text-3xl font-black tracking-tight text-center">
