@@ -187,7 +187,11 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => v
                 setConnection(result)
                 onLiveChange?.(true)
               } catch (err: any) {
-                setError(err.response?.data?.message ?? 'Could not start the capture session.')
+                if (err?.code === 'USAGE_LIMIT_EXCEEDED') {
+                  setError('Your streaming usage limit has been reached. Please upgrade your plan from the Admin tab.')
+                } else {
+                  setError(err.response?.data?.message ?? 'Could not start the capture session.')
+                }
               } finally {
                 setConnecting(false)
               }
@@ -482,7 +486,11 @@ function CommentatorPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) =
                 setConnection(result)
                 onLiveChange?.(true)
               } catch (err: any) {
-                setError(err.response?.data?.message ?? 'Could not start the commentary session.')
+                if (err?.code === 'USAGE_LIMIT_EXCEEDED') {
+                  setError('Your streaming usage limit has been reached. Please upgrade your plan from the Admin tab.')
+                } else {
+                  setError(err.response?.data?.message ?? 'Could not start the commentary session.')
+                }
               } finally {
                 setConnecting(false)
               }
@@ -1181,7 +1189,11 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                   setConnection(result)
                   onJoinChange?.(true)
                 } catch (err: any) {
-                  setJoinError(err.response?.data?.message ?? 'Could not join as broadcaster.')
+                  if (err?.code === 'USAGE_LIMIT_EXCEEDED') {
+                    setJoinError('Streaming is unavailable. The organiser has reached their usage limit.')
+                  } else {
+                    setJoinError(err.response?.data?.message ?? 'Could not join as broadcaster.')
+                  }
                 } finally {
                   setConnecting(false)
                 }

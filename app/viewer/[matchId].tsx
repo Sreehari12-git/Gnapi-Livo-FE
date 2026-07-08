@@ -21,7 +21,13 @@ export default function ViewerMatch() {
     setConnecting(true)
     fetchLiveKitToken(identity, eventId, 'viewer')
       .then(setConnection)
-      .catch((err: any) => setError(err.response?.data?.message ?? 'Could not join this event.'))
+      .catch((err: any) => {
+        if (err?.code === 'USAGE_LIMIT_EXCEEDED') {
+          setError('Streaming is currently unavailable. The organiser has reached their usage limit.')
+        } else {
+          setError(err.response?.data?.message ?? 'Could not join this event.')
+        }
+      })
       .finally(() => setConnecting(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId, eventId])

@@ -6,6 +6,7 @@ import * as Clipboard from 'expo-clipboard'
 import * as SecureStore from 'expo-secure-store'
 import { getEventsByAdmin, updateEvent, deleteEvent } from './services/event'
 import { getPlans, getCurrentSubscription, createOrder, SubscriptionPlan, CurrentSubscription } from './services/payment'
+import { fetchUsageStats, UsageStats } from './services/livekit'
 import { changeAdminPassword } from './services/auth'
 import {
   Plus,
@@ -25,6 +26,7 @@ import {
   Lock,
   Eye,
   EyeOff,
+  BarChart2,
 } from 'lucide-react-native'
 
 type Tab = 'events' | 'subscription' | 'password'
@@ -178,19 +180,22 @@ function SubscriptionTab() {
   const [upgradePlans, setUpgradePlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState<number | null>(null)
+  const [usageStats, setUsageStats] = useState<UsageStats | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const adminId = await SecureStore.getItemAsync('adminId')
       if (!adminId) return
-      const [sub, all] = await Promise.all([
+      const [sub, all, stats] = await Promise.all([
         getCurrentSubscription(Number(adminId)),
         getPlans(),
+        fetchUsageStats(Number(adminId)).catch(() => null),
       ])
       setCurrent(sub)
       const currentAmount = sub?.plan?.amount ?? 0
       setUpgradePlans(all.filter(p => p.amount > currentAmount))
+      setUsageStats(stats)
     } catch {
       // silent
     } finally {
@@ -256,6 +261,43 @@ function SubscriptionTab() {
             <View className="w-1.5 h-1.5 rounded-full bg-green-400" />
             <Text className="text-green-400 text-xs font-semibold capitalize">{current.status}</Text>
           </View>
+        </View>
+      )}
+
+      {usageStats && usageStats.limitMinutes > 0 && (
+        <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-4 mb-3">
+          <View className="flex-row items-center gap-2 mb-3">
+            <BarChart2 size={14} color="#fb923c" />
+            <Text className="text-white font-bold text-sm">Streaming Usage</Text>
+          </View>
+          <View className="h-2 bg-slate-700 rounded-full overflow-hidden mb-2">
+            <View
+              className="h-full rounded-full bg-orange-500"
+              style={{ width: `${Math.min(100, (usageStats.usedMinutes / usageStats.limitMinutes) * 100)}%` }}
+            />
+          </View>
+          <View className="flex-row justify-between">
+            <Text className="text-white/40 text-xs">{Math.round(usageStats.usedMinutes)} min used</Text>
+            <Text className="text-white/60 text-xs font-semibold">
+              {Math.round(usageStats.remainingMinutes)} min left / {usageStats.limitMinutes} min total
+            </Text>
+          </View>
+          {usageStats.remainingMinutes <= 0 && (
+            <View className="mt-3 bg-red-500/15 border border-red-500/30 rounded-xl px-3 py-2 flex-row items-center gap-2">
+              <AlertTriangle size={13} color="#f87171" />
+              <Text className="text-red-400 text-xs font-semibold flex-1">
+                Usage limit reached. Upgrade your plan to continue streaming.
+              </Text>
+            </View>
+          )}
+          {usageStats.remainingMinutes > 0 && usageStats.remainingMinutes <= usageStats.limitMinutes * 0.1 && (
+            <View className="mt-3 bg-yellow-500/15 border border-yellow-500/30 rounded-xl px-3 py-2 flex-row items-center gap-2">
+              <AlertTriangle size={13} color="#facc15" />
+              <Text className="text-yellow-400 text-xs font-semibold flex-1">
+                Less than {Math.round(usageStats.remainingMinutes)} minutes remaining. Consider upgrading.
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
