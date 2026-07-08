@@ -8,17 +8,25 @@ import { AlertTriangle, RefreshCw } from 'lucide-react-native'
 
 export default function RazorpayCheckout() {
   const router = useRouter()
-  const { orderId, amount, currency, keyId } = useLocalSearchParams<{
+  const { orderId, amount, currency, keyId, planId, mode, successRedirect } = useLocalSearchParams<{
     orderId: string
     amount: string
     currency: string
     keyId: string
+    planId: string
+    mode: string           // 'register' | 'upgrade'
+    successRedirect: string
   }>()
   const webViewRef = useRef<WebView>(null)
   const [pageError, setPageError] = useState(false)
   const [status, setStatus] = useState<'idle' | 'verifying' | 'cleaning'>('idle')
 
   const handleFail = async (reason: string) => {
+    if (mode === 'upgrade') {
+      router.replace('/adminDashboard')
+      return
+    }
+    // register mode: delete the admin account and send back to start
     setStatus('cleaning')
     try {
       const adminId = await SecureStore.getItemAsync('adminId')
@@ -42,11 +50,12 @@ export default function RazorpayCheckout() {
           if (!adminId) throw new Error('No adminId')
           await verifyPayment(
             Number(adminId),
+            Number(planId),
             data.razorpay_order_id,
             data.razorpay_payment_id,
             data.razorpay_signature,
           )
-          router.replace('/controlPanelRegister')
+          router.replace((successRedirect ?? '/controlPanelRegister') as any)
         } catch {
           await handleFail('verify_failed')
         }

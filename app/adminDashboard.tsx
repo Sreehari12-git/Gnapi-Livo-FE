@@ -1,9 +1,11 @@
-import { View, Text, Pressable, FlatList, ActivityIndicator, TextInput, Alert } from 'react-native'
+import { View, Text, Pressable, FlatList, ActivityIndicator, TextInput, Alert, ScrollView } from 'react-native'
 import { useState, useCallback } from 'react'
 import { useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import * as Clipboard from 'expo-clipboard'
+import * as SecureStore from 'expo-secure-store'
 import { getAllEvents, updateEvent, deleteEvent } from './services/event'
+import { getPlans, getCurrentSubscription, createOrder, SubscriptionPlan, CurrentSubscription } from './services/payment'
 import {
   Plus,
   ChevronLeft,
@@ -17,6 +19,8 @@ import {
   Hash,
   Copy,
   CopyCheck,
+  ArrowUpCircle,
+  Zap,
 } from 'lucide-react-native'
 
 type EventItem = {
@@ -162,6 +166,123 @@ function EventCard({
   )
 }
 
+function SubscriptionSection() {
+  const router = useRouter()
+  const [current, setCurrent] = useState<CurrentSubscription>(null)
+  const [upgradePlans, setUpgradePlans] = useState<SubscriptionPlan[]>([])
+  const [loading, setLoading] = useState(true)
+  const [upgrading, setUpgrading] = useState<number | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const adminId = await SecureStore.getItemAsync('adminId')
+      if (!adminId) return
+      const [sub, all] = await Promise.all([
+        getCurrentSubscription(Number(adminId)),
+        getPlans(),
+      ])
+      setCurrent(sub)
+      // Only paid plans that are strictly higher amount than current
+      const currentAmount = sub?.plan?.amount ?? 0
+      setUpgradePlans(all.filter(p => p.amount > currentAmount))
+    } catch {
+      // silent — section just won't show
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useFocusEffect(useCallback(() => { load() }, [load]))
+
+  const handleUpgrade = async (plan: SubscriptionPlan) => {
+    setUpgrading(plan.id)
+    try {
+      const adminId = await SecureStore.getItemAsync('adminId')
+      if (!adminId) return
+      const order = await createOrder(Number(adminId), plan.id)
+      router.push({
+        pathname: '/razorpayCheckout',
+        params: {
+          orderId: order.orderId,
+          amount: String(order.amount),
+          currency: order.currency,
+          keyId: order.keyId,
+          planId: plan.id,
+          mode: 'upgrade',
+          successRedirect: '/adminDashboard',
+        },
+      })
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message ?? 'Could not initiate upgrade.')
+    } finally {
+      setUpgrading(null)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <View className="mb-6">
+      <View className="flex-row items-center gap-2 mb-3">
+        <Zap size={14} color="#fb923c" />
+        <Text className="text-orange-500 text-xs font-black tracking-widest uppercase">Subscription</Text>
+      </View>
+
+      {/* Current plan */}
+      {current?.plan && (
+        <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-4 mb-3">
+          <View className="flex-row items-center justify-between">
+            <View>
+              <Text className="text-white/40 text-xs mb-0.5">Current plan</Text>
+              <Text className="text-white text-base font-black">{current.plan.name}</Text>
+            </View>
+            <View className="items-end">
+              <Text className="text-white/40 text-xs mb-0.5">Usage limit</Text>
+              <Text className="text-orange-400 text-sm font-bold">{current.plan.usageLimitMinutes} min</Text>
+            </View>
+          </View>
+          <View className="flex-row items-center gap-1.5 mt-2">
+            <View className="w-1.5 h-1.5 rounded-full bg-green-400" />
+            <Text className="text-green-400 text-xs font-semibold capitalize">{current.status}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Upgrade options */}
+      {upgradePlans.length > 0 && (
+        <View>
+          <Text className="text-white/30 text-xs font-semibold mb-2">Upgrade to</Text>
+          {upgradePlans.map(plan => (
+            <View key={plan.id} className="bg-orange-500/10 border border-orange-500/20 rounded-2xl px-5 py-4 mb-2 flex-row items-center gap-3">
+              <View className="flex-1">
+                <Text className="text-white text-sm font-black">{plan.name}</Text>
+                <Text className="text-orange-400 text-xs mt-0.5">{plan.usageLimitMinutes} min</Text>
+              </View>
+              <Pressable
+                onPress={() => handleUpgrade(plan)}
+                disabled={upgrading !== null}
+                className={`bg-orange-500 active:bg-orange-600 rounded-xl px-4 py-2.5 flex-row items-center gap-1.5 ${upgrading !== null ? 'opacity-50' : ''}`}
+              >
+                {upgrading === plan.id ? (
+                  <ActivityIndicator size="small" color="#0A0E16" />
+                ) : (
+                  <>
+                    <ArrowUpCircle size={14} color="#0A0E16" />
+                    <Text className="text-[#0A0E16] text-xs font-black">₹{plan.amount}</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View className="h-px bg-white/5 mt-3 mb-6" />
+    </View>
+  )
+}
+
 function EmptyState() {
   return (
     <View className="items-center justify-center py-24">
@@ -268,6 +389,7 @@ export default function AdminDashboard() {
             paddingBottom: 40,
             flexGrow: 1,
           }}
+          ListHeaderComponent={<SubscriptionSection />}
           ListEmptyComponent={<EmptyState />}
           onRefresh={loadEvents}
           refreshing={loading}
