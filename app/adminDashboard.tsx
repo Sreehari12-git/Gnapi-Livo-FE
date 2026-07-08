@@ -4,8 +4,9 @@ import { useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import * as Clipboard from 'expo-clipboard'
 import * as SecureStore from 'expo-secure-store'
-import { getAllEvents, updateEvent, deleteEvent } from './services/event'
+import { getEventsByAdmin, updateEvent, deleteEvent } from './services/event'
 import { getPlans, getCurrentSubscription, createOrder, SubscriptionPlan, CurrentSubscription } from './services/payment'
+import { changeAdminPassword } from './services/auth'
 import {
   Plus,
   ChevronLeft,
@@ -21,7 +22,12 @@ import {
   CopyCheck,
   ArrowUpCircle,
   Zap,
+  Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react-native'
+
+type Tab = 'events' | 'subscription' | 'password'
 
 type EventItem = {
   id: string
@@ -166,7 +172,7 @@ function EventCard({
   )
 }
 
-function SubscriptionSection() {
+function SubscriptionTab() {
   const router = useRouter()
   const [current, setCurrent] = useState<CurrentSubscription>(null)
   const [upgradePlans, setUpgradePlans] = useState<SubscriptionPlan[]>([])
@@ -183,11 +189,10 @@ function SubscriptionSection() {
         getPlans(),
       ])
       setCurrent(sub)
-      // Only paid plans that are strictly higher amount than current
       const currentAmount = sub?.plan?.amount ?? 0
       setUpgradePlans(all.filter(p => p.amount > currentAmount))
     } catch {
-      // silent — section just won't show
+      // silent
     } finally {
       setLoading(false)
     }
@@ -220,16 +225,21 @@ function SubscriptionSection() {
     }
   }
 
-  if (loading) return null
+  if (loading) {
+    return (
+      <View className="flex-1 items-center justify-center">
+        <ActivityIndicator color="#fb923c" />
+      </View>
+    )
+  }
 
   return (
-    <View className="mb-6">
+    <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
       <View className="flex-row items-center gap-2 mb-3">
         <Zap size={14} color="#fb923c" />
         <Text className="text-orange-500 text-xs font-black tracking-widest uppercase">Subscription</Text>
       </View>
 
-      {/* Current plan */}
       {current?.plan && (
         <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-4 mb-3">
           <View className="flex-row items-center justify-between">
@@ -249,7 +259,6 @@ function SubscriptionSection() {
         </View>
       )}
 
-      {/* Upgrade options */}
       {upgradePlans.length > 0 && (
         <View>
           <Text className="text-white/30 text-xs font-semibold mb-2">Upgrade to</Text>
@@ -277,9 +286,129 @@ function SubscriptionSection() {
           ))}
         </View>
       )}
+    </ScrollView>
+  )
+}
 
-      <View className="h-px bg-white/5 mt-3 mb-6" />
+function PasswordField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  editable,
+}: {
+  label: string
+  value: string
+  onChangeText: (v: string) => void
+  placeholder: string
+  editable: boolean
+}) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <View>
+      <Text className="text-white/40 text-xs mb-1.5">{label}</Text>
+      <View className="flex-row items-center bg-[#0A0E16] rounded-xl border border-white/10">
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={!visible}
+          editable={editable}
+          placeholder={placeholder}
+          placeholderTextColor="rgba(255,255,255,0.2)"
+          className="flex-1 text-white text-sm px-4 py-3"
+        />
+        <Pressable
+          onPress={() => setVisible(v => !v)}
+          className="pr-4 active:opacity-60"
+        >
+          {visible
+            ? <EyeOff size={16} color="rgba(255,255,255,0.3)" />
+            : <Eye size={16} color="rgba(255,255,255,0.3)" />
+          }
+        </Pressable>
+      </View>
     </View>
+  )
+}
+
+function PasswordTab() {
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'New passwords do not match.')
+      return
+    }
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'New password must be at least 6 characters.')
+      return
+    }
+    setSaving(true)
+    try {
+      const adminId = await SecureStore.getItemAsync('adminId')
+      if (!adminId) return
+      await changeAdminPassword(Number(adminId), currentPassword, newPassword)
+      Alert.alert('Success', 'Password changed successfully.')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message ?? 'Failed to change password.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
+      <View className="flex-row items-center gap-2 mb-3">
+        <Lock size={14} color="#fb923c" />
+        <Text className="text-orange-500 text-xs font-black tracking-widest uppercase">Change Password</Text>
+      </View>
+
+      <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-5 gap-4">
+        <PasswordField
+          label="Current password"
+          value={currentPassword}
+          onChangeText={setCurrentPassword}
+          placeholder="Enter current password"
+          editable={!saving}
+        />
+        <PasswordField
+          label="New password"
+          value={newPassword}
+          onChangeText={setNewPassword}
+          placeholder="Enter new password"
+          editable={!saving}
+        />
+        <PasswordField
+          label="Confirm new password"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          placeholder="Re-enter new password"
+          editable={!saving}
+        />
+
+        <Pressable
+          onPress={handleChange}
+          disabled={saving}
+          className={`bg-orange-500 active:bg-orange-600 rounded-xl py-3.5 items-center mt-1 ${saving ? 'opacity-50' : ''}`}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#0A0E16" />
+          ) : (
+            <Text className="text-[#0A0E16] text-sm font-black">Update Password</Text>
+          )}
+        </Pressable>
+      </View>
+    </ScrollView>
   )
 }
 
@@ -287,18 +416,15 @@ function EmptyState() {
   return (
     <View className="items-center justify-center py-24">
       <CalendarPlus size={32} color="rgba(255,255,255,0.15)" />
-      <Text className="text-white/30 text-sm font-semibold mt-4">
-        No events yet
-      </Text>
-      <Text className="text-white/20 text-xs mt-1">
-        Tap the + button to create one
-      </Text>
+      <Text className="text-white/30 text-sm font-semibold mt-4">No events yet</Text>
+      <Text className="text-white/20 text-xs mt-1">Tap the + button to create one</Text>
     </View>
   )
 }
 
 export default function AdminDashboard() {
   const router = useRouter()
+  const [activeTab, setActiveTab] = useState<Tab>('events')
   const [events, setEvents] = useState<EventItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -307,12 +433,12 @@ export default function AdminDashboard() {
     setLoading(true)
     setError('')
     try {
-      const data = await getAllEvents()
+      const adminId = await SecureStore.getItemAsync('adminId')
+      if (!adminId) return
+      const data = await getEventsByAdmin(Number(adminId))
       setEvents(data.events ?? data)
     } catch (err: any) {
-      setError(
-        err.response?.data?.message || 'Failed to load events.'
-      )
+      setError(err.response?.data?.message || 'Failed to load events.')
     } finally {
       setLoading(false)
     }
@@ -324,24 +450,33 @@ export default function AdminDashboard() {
     }, [loadEvents])
   )
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'events', label: 'Events' },
+    { key: 'subscription', label: 'Subscription' },
+    { key: 'password', label: 'Password' },
+  ]
+
   return (
     <View className="flex-1 bg-[#0A0E16]">
+      {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
         <View className="flex-row items-center justify-between mb-6">
           <Pressable
-            onPress={() => router.push("/organisers")}
+            onPress={() => router.push('/organisers')}
             className="flex-row items-center gap-1 active:opacity-60"
           >
             <ChevronLeft size={16} color="rgba(255,255,255,0.4)" />
             <Text className="text-white/40 text-sm font-semibold">Back</Text>
           </Pressable>
 
-          <Pressable
-            onPress={() => router.push('/CreateEventPanel')}
-            className="w-10 h-10 rounded-xl bg-orange-500 active:bg-orange-600 items-center justify-center"
-          >
-            <Plus size={20} color="#0A0E16" />
-          </Pressable>
+          {activeTab === 'events' && (
+            <Pressable
+              onPress={() => router.push('/CreateEventPanel')}
+              className="w-10 h-10 rounded-xl bg-orange-500 active:bg-orange-600 items-center justify-center"
+            >
+              <Plus size={20} color="#0A0E16" />
+            </Pressable>
+          )}
         </View>
 
         <View className="flex-row items-center gap-2 mb-1">
@@ -350,52 +485,73 @@ export default function AdminDashboard() {
             Admin Session
           </Text>
         </View>
-        <Text className="text-white text-5xl font-black mb-2">Events</Text>
-        <Text className="text-white/40 text-base mb-6">
-          All events created under your account.
-        </Text>
+        <Text className="text-white text-5xl font-black mb-6">Dashboard</Text>
 
-        <View className="h-px bg-white/5 mb-6" />
+        {/* Tab bar */}
+        <View className="flex-row gap-2 mb-6">
+          {tabs.map(tab => (
+            <Pressable
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === tab.key ? 'bg-orange-500' : 'bg-white/5'}`}
+            >
+              <Text
+                className={`text-xs font-black ${activeTab === tab.key ? 'text-[#0A0E16]' : 'text-white/40'}`}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
 
-        {error ? (
-          <View className="rounded-2xl px-4 py-3 mb-4 flex-row items-center gap-2 border bg-red-500/10 border-red-500/25">
-            <AlertTriangle size={14} color="#f87171" />
-            <Text className="text-xs font-semibold flex-1 text-red-400">
-              {error}
-            </Text>
-          </View>
-        ) : null}
+        <View className="h-px bg-white/5 mb-0" />
       </View>
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#fb923c" />
-        </View>
-      ) : (
-        <FlatList
-          data={events}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <EventCard
-              event={item}
-              onUpdated={(updated) =>
-                setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
-              }
-              onDeleted={(id) => setEvents((prev) => prev.filter((e) => e.id !== id))}
+      {/* Tab content */}
+      {activeTab === 'events' && (
+        <>
+          {error ? (
+            <View style={{ paddingHorizontal: 24, paddingTop: 16 }}>
+              <View className="rounded-2xl px-4 py-3 mb-4 flex-row items-center gap-2 border bg-red-500/10 border-red-500/25">
+                <AlertTriangle size={14} color="#f87171" />
+                <Text className="text-xs font-semibold flex-1 text-red-400">{error}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {loading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator color="#fb923c" />
+            </View>
+          ) : (
+            <FlatList
+              data={events}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <EventCard
+                  event={item}
+                  onUpdated={(updated) =>
+                    setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
+                  }
+                  onDeleted={(id) => setEvents((prev) => prev.filter((e) => e.id !== id))}
+                />
+              )}
+              contentContainerStyle={{
+                paddingHorizontal: 24,
+                paddingTop: 24,
+                paddingBottom: 40,
+                flexGrow: 1,
+              }}
+              ListEmptyComponent={<EmptyState />}
+              onRefresh={loadEvents}
+              refreshing={loading}
             />
           )}
-          contentContainerStyle={{
-            paddingHorizontal: 24,
-            paddingBottom: 40,
-            flexGrow: 1,
-          }}
-          ListHeaderComponent={<SubscriptionSection />}
-          ListEmptyComponent={<EmptyState />}
-          onRefresh={loadEvents}
-          refreshing={loading}
-        />
+        </>
       )}
+
+      {activeTab === 'subscription' && <SubscriptionTab />}
+      {activeTab === 'password' && <PasswordTab />}
     </View>
   )
 }
-

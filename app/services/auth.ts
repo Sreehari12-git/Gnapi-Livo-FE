@@ -41,6 +41,19 @@ export const controlPanelRegister = async (
   return response.data;
 };
 
+export const changeAdminPassword = async (
+  adminId: number,
+  currentPassword: string,
+  newPassword: string,
+) => {
+  const response = await api.post('/auth/admin/change-password', {
+    adminId,
+    currentPassword,
+    newPassword,
+  });
+  return response.data;
+};
+
 export const controlPanelLogin = async (
   email: string,
   password: string

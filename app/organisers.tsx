@@ -712,9 +712,10 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
   const isSportsEvent = (eventInfo?.category ?? 'sports') === 'sports'
   const [matches, setMatches] = useState<MatchState[]>([])
   const [assigningMatchId, setAssigningMatchId] = useState<string | null>(null)
-  const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[] }>({
+  const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[]; viewerCount: number }>({
     capturers: [],
     commentators: [],
+    viewerCount: 0,
   })
 
   const [sportCounters, setSportCounters] = useState<Record<Sport, number>>({
@@ -1210,7 +1211,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
               busy={assigningMatchId !== null}
               onAssignCapturer={assignCapturerToMatch}
               onAssignCommentator={assignCommentatorToMatch}
-              onRosterChange={(capturers, commentators) => setRoster({ capturers, commentators })}
+              onRosterChange={(capturers, commentators, viewerCount) => setRoster({ capturers, commentators, viewerCount })}
             />
             <BroadcasterWhipManager matches={matches} />
           </LiveKitRoom>
@@ -1277,6 +1278,25 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                           <Trash2 size={14} color="#111" />
                           <Text className="text-black text-xs font-medium">Remove</Text>
                         </Pressable>
+                      </View>
+                    </View>
+
+                    {/* Per-match participant counts */}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
+                        <Video size={12} color="#2563eb" />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>Capturer</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#2563eb' }}>{match.liveCapturerIdentity ? 1 : 0}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#faf5ff', borderWidth: 1, borderColor: '#e9d5ff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
+                        <Mic size={12} color="#7c3aed" />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>Commentator</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#7c3aed' }}>{match.liveCommentatorIdentity ? 1 : 0}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
+                        <Eye size={12} color="#059669" />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>Viewers</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#059669' }}>{roster.viewerCount}</Text>
                       </View>
                     </View>
 
@@ -1536,24 +1556,43 @@ function BroadcasterLobbies({
   busy: boolean
   onAssignCapturer: (capturerIdentity: string, matchId: string | null) => void
   onAssignCommentator: (commentatorIdentity: string, matchId: string | null) => void
-  onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[]) => void
+  onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[], viewerCount: number) => void
 }) {
   const participants = useRemoteParticipants()
   const cameraTracks = useTracks([Track.Source.Camera])
 
   const capturers = participants.filter((p) => parseParticipantRole(p.metadata) === 'capturer')
   const commentators = participants.filter((p) => parseParticipantRole(p.metadata) === 'commentator')
+  const viewers = participants.filter((p) => parseParticipantRole(p.metadata) === 'viewer')
   const assignableMatches = matches.filter((m) => m.liveStatus !== 'ended')
 
   useEffect(() => {
     onRosterChange(
       capturers.map((p) => ({ identity: p.identity, name: p.name })),
       commentators.map((p) => ({ identity: p.identity, name: p.name })),
+      viewers.length,
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participants])
 
   return (
+    <View>
+      {/* Total participant counts */}
+      <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4 }}>
+        <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: '#2563eb' }}>{capturers.length}</Text>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: '#6b7280', textAlign: 'center', marginTop: 2 }}>Capturers</Text>
+        </View>
+        <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#faf5ff', borderWidth: 1, borderColor: '#e9d5ff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: '#7c3aed' }}>{commentators.length}</Text>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: '#6b7280', textAlign: 'center', marginTop: 2 }}>Commentators</Text>
+        </View>
+        <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: '#059669' }}>{viewers.length}</Text>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: '#6b7280', textAlign: 'center', marginTop: 2 }}>Viewers</Text>
+        </View>
+      </View>
+
     <View className="px-6 mt-6 gap-4">
       <View className="border border-gray-200 rounded-xl p-4">
         <View className="flex-row items-center gap-2 mb-1">
@@ -1630,6 +1669,7 @@ function BroadcasterLobbies({
           </View>
         )}
       </View>
+    </View>
     </View>
   )
 }

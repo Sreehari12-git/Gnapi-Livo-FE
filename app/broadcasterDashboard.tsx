@@ -123,9 +123,10 @@ export default function BroadcasterDashboard() {
   const [selectedSport, setSelectedSport] = useState<Sport>('badminton')
   const [matches, setMatches] = useState<MatchState[]>([])
   const [assigningMatchId, setAssigningMatchId] = useState<string | null>(null)
-  const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[] }>({
+  const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[]; viewerCount: number }>({
     capturers: [],
     commentators: [],
+    viewerCount: 0,
   })
 
   const [sportCounters, setSportCounters] = useState<Record<Sport, number>>({
@@ -584,7 +585,7 @@ export default function BroadcasterDashboard() {
             busy={assigningMatchId !== null}
             onAssignCapturer={assignCapturerToMatch}
             onAssignCommentator={assignCommentatorToMatch}
-            onRosterChange={(capturers, commentators) => setRoster({ capturers, commentators })}
+            onRosterChange={(capturers, commentators, viewerCount) => setRoster({ capturers, commentators, viewerCount })}
           />
           {/* Manages one WHIP → YouTube connection per match that has ytWhipUrl set */}
           <BroadcasterWhipManager matches={matches} />
@@ -592,7 +593,7 @@ export default function BroadcasterDashboard() {
       )}
 
       {isJoined && (
-        <View className="px-6 mt-6 gap-4">
+        <View className="px-6 mt-4 gap-4">
 
           {matches.length === 0 ? (
             <Text className="text-center text-gray-400 text-sm mt-2">
@@ -601,7 +602,6 @@ export default function BroadcasterDashboard() {
           ) : (
             matches.map(match => {
               const { nameA, nameB } = getNames(match)
-              const feedCount = (match.liveCapturerIdentity ? 1 : 0) + (match.liveCommentatorIdentity ? 1 : 0)
               const isEnded = match.liveStatus === 'ended'
               return (
                 <View key={match.id} className="border border-gray-200 rounded-xl p-4 gap-4">
@@ -616,7 +616,6 @@ export default function BroadcasterDashboard() {
                       <Text className="text-gray-600 text-xs font-semibold">{SPORT_LABELS[match.sport]}</Text>
                     </View>
                     <Text className="text-gray-400 text-sm">
-                      {feedCount} feed(s) ·{' '}
                       {isEnded
                         ? match.winner
                           ? `${match.winner === 'A' ? nameA : nameB} won`
@@ -653,6 +652,13 @@ export default function BroadcasterDashboard() {
                         <Text className="text-black text-xs font-medium">Remove</Text>
                       </Pressable>
                     </View>
+                  </View>
+
+                  {/* Live participant counts for this match */}
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <MatchStatChip label="Capturer" icon={<Video size={12} color="#2563eb" />} count={match.liveCapturerIdentity ? 1 : 0} color="#2563eb" />
+                    <MatchStatChip label="Commentator" icon={<Mic size={12} color="#7c3aed" />} count={match.liveCommentatorIdentity ? 1 : 0} color="#7c3aed" />
+                    <MatchStatChip label="Viewers" icon={<Eye size={12} color="#059669" />} count={match.liveCapturerIdentity ? roster.viewerCount : 0} color="#059669" />
                   </View>
 
                   {/* YouTube Live — full-width row so it's always visible on phone screens */}
@@ -938,6 +944,26 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
   return null
 }
 
+function StatPill({ label, count, color }: { label: string; count: number; color: string }) {
+  return (
+    <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
+      <Text style={{ fontSize: 28, fontWeight: '900', color }}>{count}</Text>
+      <Text style={{ fontSize: 10, fontWeight: '600', color: '#6b7280', textAlign: 'center', marginTop: 2 }}>{label}</Text>
+    </View>
+  )
+}
+
+function MatchStatChip({ label, icon, count, color }: { label: string; icon: JSX.Element; count: number; color: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
+      {icon}
+      <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '900', color }}>{count}</Text>
+    </View>
+  )
+}
+
+
 function BroadcasterLobbies({
   matches,
   busy,
@@ -949,25 +975,34 @@ function BroadcasterLobbies({
   busy: boolean
   onAssignCapturer: (capturerIdentity: string, matchId: string | null) => void
   onAssignCommentator: (commentatorIdentity: string, matchId: string | null) => void
-  onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[]) => void
+  onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[], viewerCount: number) => void
 }) {
   const participants = useRemoteParticipants()
   const cameraTracks = useTracks([Track.Source.Camera])
 
   const capturers = participants.filter((p) => parseParticipantRole(p.metadata) === 'capturer')
   const commentators = participants.filter((p) => parseParticipantRole(p.metadata) === 'commentator')
+  const viewers = participants.filter((p) => parseParticipantRole(p.metadata) === 'viewer')
   const assignableMatches = matches.filter((m) => m.liveStatus !== 'ended')
 
   useEffect(() => {
     onRosterChange(
       capturers.map((p) => ({ identity: p.identity, name: p.name })),
       commentators.map((p) => ({ identity: p.identity, name: p.name })),
+      viewers.length,
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participants])
 
   return (
-    <View className="px-6 mt-6 gap-4">
+    <View style={{ paddingHorizontal: 24, marginTop: 24, gap: 16 }}>
+      {/* ── Total active counts ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12 }}>
+        <StatPill label="Capturers" count={capturers.length} color="#2563eb" />
+        <StatPill label="Commentators" count={commentators.length} color="#7c3aed" />
+        <StatPill label="Viewers" count={viewers.length} color="#059669" />
+      </View>
+
       <View className="border border-gray-200 rounded-xl p-4">
         <View className="flex-row items-center gap-2 mb-1">
           <Video size={16} color="#111" />

@@ -21,6 +21,11 @@ export const getAllEvents = async() => {
     return response.data;
 }
 
+export const getEventsByAdmin = async (adminId: number) => {
+    const response = await api.get(`/event/admin/${adminId}`);
+    return response.data;
+}
+
 export const getEventById = async (id: string) => {
     const response = await api.get(`/event/${id}`);
     return response.data;
