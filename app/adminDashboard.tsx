@@ -192,10 +192,13 @@ function SubscriptionTab() {
         getPlans(),
         fetchUsageStats(Number(adminId)).catch(() => null),
       ])
+      console.log(sub)
+      console.log(all)
       setCurrent(sub)
       const currentAmount = sub?.plan?.amount ?? 0
       setUpgradePlans(all.filter(p => p.amount > currentAmount))
       setUsageStats(stats)
+      console.log(stats);
     } catch {
       // silent
     } finally {

@@ -1,5 +1,5 @@
-import { View, Text, Pressable, ScrollView } from 'react-native'
-import { useEffect, useState } from 'react'
+import { View, Text, Pressable, ScrollView, Animated } from 'react-native'
+import { useEffect, useState, useRef } from 'react'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Radio, LogOut, Mic, AlertTriangle, ChevronLeft } from 'lucide-react-native'
 import { LiveKitRoom, VideoTrack, useDataChannel, useRemoteParticipants, useTracks } from '@livekit/react-native'
@@ -77,6 +77,18 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   const participants = useRemoteParticipants()
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
   const [match, setMatch] = useState<Match | null>(null)
+  const pulseAnim = useRef(new Animated.Value(1)).current
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    )
+    loop.start()
+    return () => loop.stop()
+  }, [])
 
   useEffect(() => {
     getMatch(matchId).then(setMatch).catch(() => {})
@@ -124,6 +136,48 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   )
   const isLive = !!match?.liveCapturerIdentity
 
+  if (!isLive) {
+    return (
+      <View className="flex-1 bg-black">
+        {/* Back button */}
+        <Pressable
+          onPress={onLeave}
+          className="absolute top-14 left-6 z-10 flex-row items-center gap-2 active:opacity-60"
+        >
+          <ChevronLeft size={18} color="rgba(255,255,255,0.4)" />
+          <Text className="text-white/40 text-sm font-medium">Back</Text>
+        </Pressable>
+
+        {/* Centered waiting indicator */}
+        <View className="flex-1 items-center justify-center gap-5">
+          <Animated.View
+            style={{ opacity: pulseAnim }}
+            className="w-16 h-16 rounded-full bg-white/10 items-center justify-center"
+          >
+            <Mic size={28} color="rgba(255,255,255,0.5)" />
+          </Animated.View>
+          <View className="items-center gap-1.5">
+            <Text className="text-white/80 text-base font-bold">
+              {match?.name ?? 'Match'}
+            </Text>
+            <Text className="text-white/35 text-sm">
+              Waiting for stream to begin…
+            </Text>
+          </View>
+        </View>
+
+        {/* Leave button at bottom */}
+        <Pressable
+          onPress={onLeave}
+          className="absolute bottom-12 self-center flex-row items-center gap-2 px-5 py-3 rounded-full border border-white/15 active:bg-white/10"
+        >
+          <LogOut size={14} color="rgba(255,255,255,0.6)" />
+          <Text className="text-white/60 text-sm font-semibold">Leave</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
   return (
     <ScrollView
       className="flex-1 bg-emerald-950"
@@ -138,9 +192,7 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
 
         <View className="self-start flex-row items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-900/60 border border-yellow-400/40 mb-5">
           <Radio size={13} color="#facc15" />
-          <Text className="text-yellow-400 font-black text-xs tracking-widest">
-            {isLive ? 'LIVE' : 'WAITING'}
-          </Text>
+          <Text className="text-yellow-400 font-black text-xs tracking-widest">LIVE</Text>
         </View>
 
         <Text className="text-white text-4xl font-black">{match?.name ?? 'Match'}</Text>
@@ -148,8 +200,7 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
       </View>
 
       <View className="px-6 mt-8 flex-row items-end justify-between">
-        <Text className="text-white text-lg font-black">{isLive ? 'On air' : 'No live feed'}</Text>
-
+        <Text className="text-white text-lg font-black">On air</Text>
         <Pressable
           onPress={onLeave}
           className="flex-row items-center gap-1.5 px-4 py-2 rounded-lg border border-white/15 active:bg-white/10"
@@ -160,18 +211,15 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
       </View>
 
       <View className="px-6 mt-4">
-        {isLive && videoTrackRef ? (
+        {videoTrackRef ? (
           <View className="rounded-2xl overflow-hidden border border-white/10 bg-black" style={{ aspectRatio: 16 / 9 }}>
             <VideoTrack trackRef={videoTrackRef} style={{ flex: 1 }} />
           </View>
         ) : (
-          <View className="bg-black/20 rounded-2xl border border-white/10 border-dashed py-10 items-center justify-center">
-            <View className="flex-row items-center gap-2">
-              <Mic size={16} color="rgba(255,255,255,0.5)" />
-              <Text className="text-white/50 text-sm">
-                Waiting for the broadcaster to start this match…
-              </Text>
-            </View>
+          <View className="bg-black rounded-2xl border border-white/10 py-10 items-center justify-center" style={{ aspectRatio: 16 / 9 }}>
+            <Animated.View style={{ opacity: pulseAnim }}>
+              <Mic size={24} color="rgba(255,255,255,0.4)" />
+            </Animated.View>
           </View>
         )}
       </View>
