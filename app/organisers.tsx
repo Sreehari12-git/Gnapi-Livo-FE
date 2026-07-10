@@ -33,6 +33,7 @@ import {
   Pause,
   ChevronDown,
   Cpu,
+  X,
 } from 'lucide-react-native'
 import { captureRef } from 'react-native-view-shot'
 import { AI_DIRECTOR_URL } from '../envdata'
@@ -973,28 +974,60 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
 
   const assignCapturerToMatch = (capturerIdentity: string, matchId: string | null) => {
     if (matchId) {
-      // Replace: exactly one capturer per match — sending [id] displaces whoever was there
-      applyLiveSelection(matchId, { liveCapturerIdentities: [capturerIdentity] })
+      const match = matches.find(m => m.id === matchId)
+      if (!match) return
+      if (match.liveCapturerIdentities.includes(capturerIdentity)) return
+      applyLiveSelection(matchId, { liveCapturerIdentities: [...match.liveCapturerIdentities, capturerIdentity] })
       return
     }
-    // Unassign
-    const current = matches.find(m => m.liveCapturerIdentities.includes(capturerIdentity))
-    if (current) {
-      applyLiveSelection(current.id, { liveCapturerIdentities: [] })
+    // Unassign from all matches that contain this identity
+    for (const m of matches) {
+      if (m.liveCapturerIdentities.includes(capturerIdentity)) {
+        applyLiveSelection(m.id, { liveCapturerIdentities: m.liveCapturerIdentities.filter(id => id !== capturerIdentity) })
+      }
     }
   }
 
   const assignCommentatorToMatch = (commentatorIdentity: string, matchId: string | null) => {
     if (matchId) {
-      // Replace: exactly one commentator per match
-      applyLiveSelection(matchId, { liveCommentatorIdentities: [commentatorIdentity] })
+      const match = matches.find(m => m.id === matchId)
+      if (!match) return
+      if (match.liveCommentatorIdentities.includes(commentatorIdentity)) return
+      applyLiveSelection(matchId, { liveCommentatorIdentities: [...match.liveCommentatorIdentities, commentatorIdentity] })
       return
     }
-    // Unassign
-    const current = matches.find(m => m.liveCommentatorIdentities.includes(commentatorIdentity))
-    if (current) {
-      applyLiveSelection(current.id, { liveCommentatorIdentities: [] })
+    // Unassign from all matches that contain this identity
+    for (const m of matches) {
+      if (m.liveCommentatorIdentities.includes(commentatorIdentity)) {
+        applyLiveSelection(m.id, { liveCommentatorIdentities: m.liveCommentatorIdentities.filter(id => id !== commentatorIdentity) })
+      }
     }
+  }
+
+  const unassignCapturerFromMatch = (identity: string, matchId: string) => {
+    const match = matches.find(m => m.id === matchId)
+    if (!match) return
+    applyLiveSelection(matchId, { liveCapturerIdentities: match.liveCapturerIdentities.filter(id => id !== identity) })
+  }
+
+  const unassignCommentatorFromMatch = (identity: string, matchId: string) => {
+    const match = matches.find(m => m.id === matchId)
+    if (!match) return
+    applyLiveSelection(matchId, { liveCommentatorIdentities: match.liveCommentatorIdentities.filter(id => id !== identity) })
+  }
+
+  const switchLiveCapturer = (identity: string, matchId: string) => {
+    const match = matches.find(m => m.id === matchId)
+    if (!match) return
+    const rest = match.liveCapturerIdentities.filter(id => id !== identity)
+    applyLiveSelection(matchId, { liveCapturerIdentities: [identity, ...rest] })
+  }
+
+  const switchLiveCommentator = (identity: string, matchId: string) => {
+    const match = matches.find(m => m.id === matchId)
+    if (!match) return
+    const rest = match.liveCommentatorIdentities.filter(id => id !== identity)
+    applyLiveSelection(matchId, { liveCommentatorIdentities: [identity, ...rest] })
   }
 
   const toggleAiDirection = (matchId: string) => {
@@ -1280,6 +1313,10 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
               busy={assigningMatchId !== null}
               onAssignCapturer={assignCapturerToMatch}
               onAssignCommentator={assignCommentatorToMatch}
+              onUnassignCapturer={unassignCapturerFromMatch}
+              onUnassignCommentator={unassignCommentatorFromMatch}
+              onSwitchLiveCapturer={switchLiveCapturer}
+              onSwitchLiveCommentator={switchLiveCommentator}
               onRosterChange={(capturers, commentators, viewerCount) => setRoster({ capturers, commentators, viewerCount })}
               aiEnabledMap={aiEnabledMap}
               onAiSwitch={handleAiSwitch}
@@ -1472,31 +1509,64 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                     ) : (
                       <>
                         <View className="border border-gray-200 rounded-xl p-4 gap-3">
-                          <View className="gap-1.5">
-                            <View className="flex-row items-center gap-2 mb-1">
+                          <View className="gap-2">
+                            <View className="flex-row items-center gap-2">
                               <Video size={14} color="#111" />
                               <Text className="text-black text-sm font-semibold">
                                 {match.liveCapturerIdentities.length > 0
-                                  ? `${match.liveCapturerIdentities.length} camera(s) live`
+                                  ? `${match.liveCapturerIdentities.length} camera(s) assigned`
                                   : 'No capturer assigned'}
                               </Text>
                             </View>
-                            {match.liveCapturerIdentities.map(id => (
-                              <View key={id} className="flex-row items-center gap-2 pl-6">
-                                <View className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                <Text className="text-gray-600 text-xs flex-1">
-                                  {roster.capturers.find(p => p.identity === id)?.name || id}
-                                </Text>
+                            {match.liveCapturerIdentities.length > 0 && (
+                              <View className="flex-row flex-wrap gap-2">
+                                {match.liveCapturerIdentities.map((id, index) => {
+                                  const isLive = index === 0
+                                  const name = roster.capturers.find(p => p.identity === id)?.name || id
+                                  return (
+                                    <Pressable
+                                      key={id}
+                                      onPress={() => !isLive && switchLiveCapturer(id, match.id)}
+                                      style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        borderRadius: 8,
+                                        borderWidth: 1,
+                                        borderColor: isLive ? '#ef4444' : '#e5e7eb',
+                                        backgroundColor: isLive ? '#fef2f2' : '#f9fafb',
+                                        paddingHorizontal: 8,
+                                        paddingVertical: 5,
+                                      }}
+                                    >
+                                      <Video size={11} color={isLive ? '#ef4444' : '#9ca3af'} />
+                                      <Text style={{ fontSize: 12, fontWeight: isLive ? '600' : '400', color: isLive ? '#ef4444' : '#6b7280' }} numberOfLines={1}>
+                                        {name}
+                                      </Text>
+                                      {isLive && (
+                                        <View style={{ backgroundColor: '#ef4444', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>LIVE</Text>
+                                        </View>
+                                      )}
+                                      <Pressable onPress={() => unassignCapturerFromMatch(id, match.id)} hitSlop={6}>
+                                        <X size={11} color="#9ca3af" />
+                                      </Pressable>
+                                    </Pressable>
+                                  )
+                                })}
                               </View>
-                            ))}
+                            )}
+                            {match.liveCapturerIdentities.length > 1 && (
+                              <Text className="text-gray-400 text-[10px]">Tap a feed to make it live</Text>
+                            )}
                           </View>
-                          <View className="gap-1.5">
+                          <View className="gap-2">
                             <View className="flex-row items-center justify-between">
                               <View className="flex-row items-center gap-2">
                                 <Mic size={14} color="#111" />
                                 <Text className="text-black text-sm font-semibold">
                                   {match.liveCommentatorIdentities.length > 0
-                                    ? `${match.liveCommentatorIdentities.length} commentator(s) live`
+                                    ? `${match.liveCommentatorIdentities.length} commentator(s) assigned`
                                     : 'No commentator assigned'}
                                 </Text>
                               </View>
@@ -1516,14 +1586,48 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                                 </Pressable>
                               )}
                             </View>
-                            {match.liveCommentatorIdentities.map(id => (
-                              <View key={id} className="flex-row items-center gap-2 pl-6">
-                                <View className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                <Text className="text-gray-600 text-xs flex-1">
-                                  {roster.commentators.find(p => p.identity === id)?.name || id}
-                                </Text>
+                            {match.liveCommentatorIdentities.length > 0 && (
+                              <View className="flex-row flex-wrap gap-2">
+                                {match.liveCommentatorIdentities.map((id, index) => {
+                                  const isOnAir = index === 0
+                                  const name = roster.commentators.find(p => p.identity === id)?.name || id
+                                  return (
+                                    <Pressable
+                                      key={id}
+                                      onPress={() => !isOnAir && switchLiveCommentator(id, match.id)}
+                                      style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        borderRadius: 999,
+                                        borderWidth: 1,
+                                        borderColor: isOnAir ? '#7c3aed' : '#e5e7eb',
+                                        backgroundColor: isOnAir ? '#faf5ff' : '#f9fafb',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                      }}
+                                    >
+                                      <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: isOnAir ? '#7c3aed' : '#d1d5db' }} />
+                                      <Mic size={11} color={isOnAir ? '#7c3aed' : '#9ca3af'} />
+                                      <Text style={{ fontSize: 12, fontWeight: isOnAir ? '600' : '400', color: isOnAir ? '#7c3aed' : '#6b7280' }} numberOfLines={1}>
+                                        {name}
+                                      </Text>
+                                      {isOnAir && (
+                                        <View style={{ backgroundColor: '#7c3aed', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>ON AIR</Text>
+                                        </View>
+                                      )}
+                                      <Pressable onPress={() => unassignCommentatorFromMatch(id, match.id)} hitSlop={6}>
+                                        <X size={11} color="#9ca3af" />
+                                      </Pressable>
+                                    </Pressable>
+                                  )
+                                })}
                               </View>
-                            ))}
+                            )}
+                            {match.liveCommentatorIdentities.length > 1 && (
+                              <Text className="text-gray-400 text-[10px]">Tap a commentator to put them on air</Text>
+                            )}
                           </View>
                           <Text className="text-gray-400 text-xs">
                             Assign feeds from the Camera lobby / Commentator lobby above.
@@ -1671,6 +1775,10 @@ function BroadcasterLobbies({
   busy,
   onAssignCapturer,
   onAssignCommentator,
+  onUnassignCapturer,
+  onUnassignCommentator,
+  onSwitchLiveCapturer,
+  onSwitchLiveCommentator,
   onRosterChange,
   aiEnabledMap,
   onAiSwitch,
@@ -1680,6 +1788,10 @@ function BroadcasterLobbies({
   busy: boolean
   onAssignCapturer: (capturerIdentity: string, matchId: string | null) => void
   onAssignCommentator: (commentatorIdentity: string, matchId: string | null) => void
+  onUnassignCapturer: (identity: string, matchId: string) => void
+  onUnassignCommentator: (identity: string, matchId: string) => void
+  onSwitchLiveCapturer: (identity: string, matchId: string) => void
+  onSwitchLiveCommentator: (identity: string, matchId: string) => void
   onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[], viewerCount: number) => void
   aiEnabledMap: Record<string, boolean>
   onAiSwitch: (matchId: string, identity: string) => void
@@ -1884,7 +1996,8 @@ function BroadcasterLobbies({
           <View className="gap-2">
             {capturers.map((p) => {
               const trackRef = cameraTracks.find((t) => t.participant.identity === p.identity)
-              const assignedMatch = matches.find((m) => m.liveCapturerIdentities.includes(p.identity))
+              const assignedMatches = matches.filter((m) => m.liveCapturerIdentities.includes(p.identity))
+              const aiLocked = assignedMatches.some(m => aiEnabledMap[m.id])
               return (
                 <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
                   <View className="flex-row items-center gap-3">
@@ -1898,12 +2011,22 @@ function BroadcasterLobbies({
                     <View className="flex-1">
                       <Text className="text-black font-semibold text-sm">{p.name || p.identity}</Text>
                       <Text className="text-gray-400 text-xs">{p.identity}</Text>
+                      {assignedMatches.length > 0 && (
+                        <View className="flex-row flex-wrap gap-1 mt-1">
+                          {assignedMatches.map(m => (
+                            <View key={m.id} style={{ backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 }}>
+                              <Text style={{ color: '#2563eb', fontSize: 10, fontWeight: '600' }}>{m.name}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
                   </View>
                   <MatchAssignDropdown
                     matches={assignableMatches}
-                    selectedMatchId={assignedMatch?.id ?? null}
-                    disabled={busy || !!(assignedMatch && aiEnabledMap[assignedMatch.id])}
+                    selectedMatchId={null}
+                    placeholder="Add to match…"
+                    disabled={busy || aiLocked}
                     onSelect={(matchId) => onAssignCapturer(p.identity, matchId)}
                   />
                 </View>
@@ -1926,16 +2049,26 @@ function BroadcasterLobbies({
         ) : (
           <View className="gap-2">
             {commentators.map((p) => {
-              const assignedMatch = matches.find((m) => m.liveCommentatorIdentities.includes(p.identity))
+              const assignedMatches = matches.filter((m) => m.liveCommentatorIdentities.includes(p.identity))
               return (
                 <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
                   <View className="flex-1">
                     <Text className="text-black font-semibold text-sm">{p.name || p.identity}</Text>
                     <Text className="text-gray-400 text-xs">{p.identity}</Text>
+                    {assignedMatches.length > 0 && (
+                      <View className="flex-row flex-wrap gap-1 mt-1">
+                        {assignedMatches.map(m => (
+                          <View key={m.id} style={{ backgroundColor: '#faf5ff', borderWidth: 1, borderColor: '#e9d5ff', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 }}>
+                            <Text style={{ color: '#7c3aed', fontSize: 10, fontWeight: '600' }}>{m.name}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
                   <MatchAssignDropdown
                     matches={assignableMatches}
-                    selectedMatchId={assignedMatch?.id ?? null}
+                    selectedMatchId={null}
+                    placeholder="Add to match…"
                     disabled={busy}
                     onSelect={(matchId) => onAssignCommentator(p.identity, matchId)}
                   />
@@ -1955,11 +2088,13 @@ function MatchAssignDropdown({
   selectedMatchId,
   disabled,
   onSelect,
+  placeholder = 'Assign to…',
 }: {
   matches: MatchState[]
   selectedMatchId: string | null
   disabled?: boolean
   onSelect: (matchId: string | null) => void
+  placeholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const selectedMatch = matches.find((m) => m.id === selectedMatchId)
@@ -1972,7 +2107,7 @@ function MatchAssignDropdown({
         className={`border border-gray-200 rounded-lg px-3 py-2 flex-row items-center justify-between ${disabled ? 'opacity-50' : 'bg-white'}`}
       >
         <Text className={`text-sm ${selectedMatch ? 'text-black font-semibold' : 'text-gray-400'}`}>
-          {selectedMatch ? selectedMatch.name : 'Assign to…'}
+          {selectedMatch ? selectedMatch.name : placeholder}
         </Text>
         <ChevronDown size={14} color="#9ca3af" />
       </Pressable>
