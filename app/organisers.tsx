@@ -1,3 +1,4 @@
+import React from 'react'
 import { View, Text, Pressable, TextInput, ScrollView, Linking } from 'react-native'
 import { useEffect, useRef, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
@@ -31,7 +32,10 @@ import {
   Play,
   Pause,
   ChevronDown,
+  Cpu,
 } from 'lucide-react-native'
+import { captureRef } from 'react-native-view-shot'
+import { AI_DIRECTOR_URL } from '../envdata'
 import { LiveKitRoom, VideoTrack, useLocalParticipant, useTrackVolume, useRemoteParticipants, useTracks, useDataChannel } from '@livekit/react-native'
 import { Track } from 'livekit-client'
 import { adminLogin } from './services/auth'
@@ -762,6 +766,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
   })
   const [ytPollingMatchId, setYtPollingMatchId] = useState<string | null>(null)
   const ytPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [aiEnabledMap, setAiEnabledMap] = useState<Record<string, boolean>>({})
+  const [aiStatusMap, setAiStatusMap] = useState<Record<string, string>>({})
 
   const refreshMatches = async () => {
     if (!eventId) return
@@ -989,6 +995,20 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
     if (current) {
       applyLiveSelection(current.id, { liveCommentatorIdentities: [] })
     }
+  }
+
+  const toggleAiDirection = (matchId: string) => {
+    setAiEnabledMap(prev => {
+      const next = { ...prev, [matchId]: !prev[matchId] }
+      if (!next[matchId]) {
+        setAiStatusMap(p => { const n = { ...p }; delete n[matchId]; return n })
+      }
+      return next
+    })
+  }
+
+  const handleAiSwitch = (matchId: string, identity: string) => {
+    applyLiveSelection(matchId, { liveCapturerIdentities: [identity] })
   }
 
   const clearLive = async (id: string) => {
@@ -1261,6 +1281,9 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
               onAssignCapturer={assignCapturerToMatch}
               onAssignCommentator={assignCommentatorToMatch}
               onRosterChange={(capturers, commentators, viewerCount) => setRoster({ capturers, commentators, viewerCount })}
+              aiEnabledMap={aiEnabledMap}
+              onAiSwitch={handleAiSwitch}
+              onAiStatusUpdate={(matchId, status) => setAiStatusMap(prev => ({ ...prev, [matchId]: status }))}
             />
             <BroadcasterWhipManager matches={matches} />
           </LiveKitRoom>
@@ -1383,6 +1406,34 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                           Live on YouTube — tap to open
                         </Text>
                       </Pressable>
+                    )}
+
+                    {!isEnded && match.liveCapturerIdentities.length > 0 && (
+                      <View>
+                        <Pressable
+                          onPress={() => toggleAiDirection(match.id)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            borderRadius: 12,
+                            paddingHorizontal: 16,
+                            paddingVertical: 12,
+                            backgroundColor: aiEnabledMap[match.id] ? '#7c3aed' : '#f3f4f6',
+                          }}
+                        >
+                          <Cpu size={14} color={aiEnabledMap[match.id] ? '#fff' : '#6b7280'} />
+                          <Text style={{ color: aiEnabledMap[match.id] ? '#fff' : '#6b7280', fontSize: 13, fontWeight: '700' }}>
+                            {aiEnabledMap[match.id] ? '● AI Direction: ON' : 'AI Direction: OFF'}
+                          </Text>
+                        </Pressable>
+                        {aiEnabledMap[match.id] && aiStatusMap[match.id] ? (
+                          <Text style={{ color: '#7c3aed', fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                            {aiStatusMap[match.id]}
+                          </Text>
+                        ) : null}
+                      </View>
                     )}
 
                     {!isEnded && (
@@ -1565,7 +1616,7 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
   }, [ytKey])
 
   const assignKey = matches
-    .map(m => `${m.id}:${m.liveCapturerIdentity ?? ''}:${m.liveCommentatorIdentity ?? ''}`)
+    .map(m => `${m.id}:${m.liveCapturerIdentities[0] ?? ''}:${m.liveCommentatorIdentities[0] ?? ''}`)
     .join('|')
 
   useEffect(() => {
@@ -1621,16 +1672,132 @@ function BroadcasterLobbies({
   onAssignCapturer,
   onAssignCommentator,
   onRosterChange,
+  aiEnabledMap,
+  onAiSwitch,
+  onAiStatusUpdate,
 }: {
   matches: MatchState[]
   busy: boolean
   onAssignCapturer: (capturerIdentity: string, matchId: string | null) => void
   onAssignCommentator: (commentatorIdentity: string, matchId: string | null) => void
   onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[], viewerCount: number) => void
+  aiEnabledMap: Record<string, boolean>
+  onAiSwitch: (matchId: string, identity: string) => void
+  onAiStatusUpdate: (matchId: string, status: string) => void
 }) {
   const participants = useRemoteParticipants()
   const cameraTracks = useTracks([Track.Source.Camera])
   const [usageExceeded, setUsageExceeded] = useState(false)
+
+  const matchesRef = useRef(matches)
+  useEffect(() => { matchesRef.current = matches }, [matches])
+
+  const aiEnabledMapRef = useRef(aiEnabledMap)
+  useEffect(() => { aiEnabledMapRef.current = aiEnabledMap }, [aiEnabledMap])
+
+  const captureViewRefs = useRef<Map<string, React.RefObject<View | null>>>(new Map())
+  const aiIntervalRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
+  const aiConsecutiveWinsRef = useRef<Record<string, Record<string, number>>>({})
+
+  const getOrCreateCaptureRef = (identity: string): React.RefObject<View | null> => {
+    if (!captureViewRefs.current.has(identity)) {
+      captureViewRefs.current.set(identity, React.createRef<View | null>())
+    }
+    return captureViewRefs.current.get(identity)!
+  }
+
+  const runAiPoll = async (matchId: string) => {
+    const match = matchesRef.current.find(m => m.id === matchId)
+    if (!match || match.liveCapturerIdentities.length === 0) return
+    if (!aiEnabledMapRef.current[matchId]) return
+
+    const formData = new FormData()
+    formData.append('sport', match.sport)
+
+    let frameCount = 0
+    for (const identity of match.liveCapturerIdentities) {
+      const viewRef = captureViewRefs.current.get(identity)
+      if (!viewRef?.current) continue
+      try {
+        const uri = await captureRef(viewRef as any, { format: 'jpg', quality: 0.8 })
+        formData.append(identity, { uri, type: 'image/jpeg', name: `${identity}.jpg` } as any)
+        frameCount++
+      } catch {}
+    }
+
+    if (frameCount === 0) {
+      onAiStatusUpdate(matchId, 'Waiting for camera frames…')
+      return
+    }
+
+    try {
+      const res = await fetch(`${AI_DIRECTOR_URL}/analyze`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        onAiStatusUpdate(matchId, 'AI service error — retrying…')
+        return
+      }
+      const { bestCamera, scores } = await res.json() as { bestCamera: string; scores: Record<string, number> }
+
+      const currentCam = match.liveCapturerIdentities[0]
+      const allZero = !bestCamera || Object.values(scores).every(s => s === 0)
+
+      if (allZero) {
+        onAiStatusUpdate(matchId, 'No ball detected — holding current')
+        return
+      }
+
+      if (bestCamera === currentCam) {
+        aiConsecutiveWinsRef.current[matchId] = {}
+        const sc = scores[currentCam]?.toFixed(2) ?? '—'
+        onAiStatusUpdate(matchId, `Holding ${currentCam.slice(-6)} (score ${sc})`)
+        return
+      }
+
+      if (!aiConsecutiveWinsRef.current[matchId]) aiConsecutiveWinsRef.current[matchId] = {}
+      const wins = aiConsecutiveWinsRef.current[matchId]
+      wins[bestCamera] = (wins[bestCamera] ?? 0) + 1
+      const sc = scores[bestCamera]?.toFixed(2) ?? '—'
+      onAiStatusUpdate(matchId, `${bestCamera.slice(-6)} winning (${wins[bestCamera]}/2, score ${sc})`)
+
+      if (wins[bestCamera] >= 2) {
+        aiConsecutiveWinsRef.current[matchId] = {}
+        onAiSwitch(matchId, bestCamera)
+        onAiStatusUpdate(matchId, `Switched to ${bestCamera.slice(-6)} (score ${sc})`)
+      }
+    } catch {
+      onAiStatusUpdate(matchId, 'AI service error — retrying…')
+    }
+  }
+
+  useEffect(() => {
+    for (const [matchId, enabled] of Object.entries(aiEnabledMap)) {
+      if (enabled && !aiIntervalRefs.current.has(matchId)) {
+        aiConsecutiveWinsRef.current[matchId] = {}
+        const id = setInterval(() => { void runAiPoll(matchId) }, 2000)
+        aiIntervalRefs.current.set(matchId, id)
+      } else if (!enabled) {
+        const existing = aiIntervalRefs.current.get(matchId)
+        if (existing !== undefined) {
+          clearInterval(existing)
+          aiIntervalRefs.current.delete(matchId)
+          aiConsecutiveWinsRef.current[matchId] = {}
+        }
+      }
+    }
+    for (const matchId of [...aiIntervalRefs.current.keys()]) {
+      if (!aiEnabledMap[matchId]) {
+        clearInterval(aiIntervalRefs.current.get(matchId)!)
+        aiIntervalRefs.current.delete(matchId)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiEnabledMap])
+
+  useEffect(() => {
+    return () => {
+      for (const id of aiIntervalRefs.current.values()) clearInterval(id)
+    }
+  }, [])
 
   useDataChannel((msg) => {
     try {
@@ -1666,6 +1833,17 @@ function BroadcasterLobbies({
 
   return (
     <View>
+      {/* Hidden full-resolution VideoTrack views for AI frame capture */}
+      <View style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}>
+        {cameraTracks.map(trackRef => {
+          const ref = getOrCreateCaptureRef(trackRef.participant.identity)
+          return (
+            <View key={trackRef.participant.identity} ref={ref} style={{ width: 640, height: 360 }}>
+              <VideoTrack trackRef={trackRef} style={{ width: 640, height: 360 }} />
+            </View>
+          )
+        })}
+      </View>
       {usageExceeded && (
         <View style={{ marginHorizontal: 24, marginTop: 16, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <AlertTriangle size={18} color="#dc2626" />
@@ -1725,7 +1903,7 @@ function BroadcasterLobbies({
                   <MatchAssignDropdown
                     matches={assignableMatches}
                     selectedMatchId={assignedMatch?.id ?? null}
-                    disabled={busy}
+                    disabled={busy || !!(assignedMatch && aiEnabledMap[assignedMatch.id])}
                     onSelect={(matchId) => onAssignCapturer(p.identity, matchId)}
                   />
                 </View>
