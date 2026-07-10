@@ -759,6 +759,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
     commentators: [],
     viewerCount: 0,
   })
+  const [cameraTrackRefs, setCameraTrackRefs] = useState<any[]>([])
 
   const [sportCounters, setSportCounters] = useState<Record<Sport, number>>({
     pickleball: 0,
@@ -1318,6 +1319,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
               onSwitchLiveCapturer={switchLiveCapturer}
               onSwitchLiveCommentator={switchLiveCommentator}
               onRosterChange={(capturers, commentators, viewerCount) => setRoster({ capturers, commentators, viewerCount })}
+              onCameraTracksChange={setCameraTrackRefs}
               aiEnabledMap={aiEnabledMap}
               onAiSwitch={handleAiSwitch}
               onAiStatusUpdate={(matchId, status) => setAiStatusMap(prev => ({ ...prev, [matchId]: status }))}
@@ -1510,51 +1512,56 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                       <>
                         <View className="border border-gray-200 rounded-xl p-4 gap-3">
                           <View className="gap-2">
-                            <View className="flex-row items-center gap-2">
-                              <Video size={14} color="#111" />
-                              <Text className="text-black text-sm font-semibold">
-                                {match.liveCapturerIdentities.length > 0
-                                  ? `${match.liveCapturerIdentities.length} camera(s) assigned`
-                                  : 'No capturer assigned'}
-                              </Text>
-                            </View>
-                            {match.liveCapturerIdentities.length > 0 && (
-                              <View className="flex-row flex-wrap gap-2">
-                                {match.liveCapturerIdentities.map((id, index) => {
-                                  const isLive = index === 0
-                                  const name = roster.capturers.find(p => p.identity === id)?.name || id
-                                  return (
-                                    <Pressable
-                                      key={id}
-                                      onPress={() => !isLive && switchLiveCapturer(id, match.id)}
-                                      style={{
-                                        flexDirection: 'row',
-                                        alignItems: 'center',
-                                        gap: 5,
-                                        borderRadius: 8,
-                                        borderWidth: 1,
-                                        borderColor: isLive ? '#ef4444' : '#e5e7eb',
-                                        backgroundColor: isLive ? '#fef2f2' : '#f9fafb',
-                                        paddingHorizontal: 8,
-                                        paddingVertical: 5,
-                                      }}
-                                    >
-                                      <Video size={11} color={isLive ? '#ef4444' : '#9ca3af'} />
-                                      <Text style={{ fontSize: 12, fontWeight: isLive ? '600' : '400', color: isLive ? '#ef4444' : '#6b7280' }} numberOfLines={1}>
-                                        {name}
-                                      </Text>
-                                      {isLive && (
-                                        <View style={{ backgroundColor: '#ef4444', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
-                                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>LIVE</Text>
-                                        </View>
-                                      )}
-                                      <Pressable onPress={() => unassignCapturerFromMatch(id, match.id)} hitSlop={6}>
-                                        <X size={11} color="#9ca3af" />
-                                      </Pressable>
-                                    </Pressable>
-                                  )
-                                })}
+                            {match.liveCapturerIdentities.length === 0 ? (
+                              <View className="flex-row items-center gap-2">
+                                <Video size={14} color="#9ca3af" />
+                                <Text className="text-gray-400 text-sm">No capturer assigned</Text>
                               </View>
+                            ) : (
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                <View className="flex-row gap-2">
+                                  {match.liveCapturerIdentities.map((id, index) => {
+                                    const isLive = index === 0
+                                    const trackRef = cameraTrackRefs.find((t: any) => t.participant.identity === id)
+                                    const name = roster.capturers.find(p => p.identity === id)?.name || id
+                                    return (
+                                      <View key={id} style={{ width: 120 }}>
+                                        <Pressable
+                                          onPress={() => !isLive && switchLiveCapturer(id, match.id)}
+                                          style={{
+                                            width: 120,
+                                            height: 80,
+                                            borderRadius: 8,
+                                            overflow: 'hidden',
+                                            backgroundColor: '#000',
+                                            borderWidth: isLive ? 2 : 1,
+                                            borderColor: isLive ? '#ef4444' : '#e5e7eb',
+                                          }}
+                                        >
+                                          {trackRef ? (
+                                            <VideoTrack trackRef={trackRef} style={{ width: 120, height: 80 }} />
+                                          ) : (
+                                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                                              <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>no video</Text>
+                                            </View>
+                                          )}
+                                          {isLive && (
+                                            <View style={{ position: 'absolute', bottom: 4, left: 4, backgroundColor: '#ef4444', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
+                                              <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>LIVE</Text>
+                                            </View>
+                                          )}
+                                        </Pressable>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
+                                          <Text style={{ color: '#6b7280', fontSize: 11, flex: 1 }} numberOfLines={1}>{name}</Text>
+                                          <Pressable onPress={() => unassignCapturerFromMatch(id, match.id)} hitSlop={6}>
+                                            <X size={12} color="#9ca3af" />
+                                          </Pressable>
+                                        </View>
+                                      </View>
+                                    )
+                                  })}
+                                </View>
+                              </ScrollView>
                             )}
                             {match.liveCapturerIdentities.length > 1 && (
                               <Text className="text-gray-400 text-[10px]">Tap a feed to make it live</Text>
@@ -1780,6 +1787,7 @@ function BroadcasterLobbies({
   onSwitchLiveCapturer,
   onSwitchLiveCommentator,
   onRosterChange,
+  onCameraTracksChange,
   aiEnabledMap,
   onAiSwitch,
   onAiStatusUpdate,
@@ -1793,6 +1801,7 @@ function BroadcasterLobbies({
   onSwitchLiveCapturer: (identity: string, matchId: string) => void
   onSwitchLiveCommentator: (identity: string, matchId: string) => void
   onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[], viewerCount: number) => void
+  onCameraTracksChange: (tracks: any[]) => void
   aiEnabledMap: Record<string, boolean>
   onAiSwitch: (matchId: string, identity: string) => void
   onAiStatusUpdate: (matchId: string, status: string) => void
@@ -1800,6 +1809,8 @@ function BroadcasterLobbies({
   const participants = useRemoteParticipants()
   const cameraTracks = useTracks([Track.Source.Camera])
   const [usageExceeded, setUsageExceeded] = useState(false)
+
+  useEffect(() => { onCameraTracksChange(cameraTracks) }, [cameraTracks])
 
   const matchesRef = useRef(matches)
   useEffect(() => { matchesRef.current = matches }, [matches])
@@ -1918,10 +1929,12 @@ function BroadcasterLobbies({
     } catch {}
   })
 
-  const capturers = participants.filter((p) => parseParticipantRole(p.metadata) === 'capturer')
+  const allCapturers = participants.filter((p) => parseParticipantRole(p.metadata) === 'capturer')
   const commentators = participants.filter((p) => parseParticipantRole(p.metadata) === 'commentator')
   const viewers = participants.filter((p) => parseParticipantRole(p.metadata) === 'viewer')
   const assignableMatches = matches.filter((m) => m.liveStatus !== 'ended')
+  // Only show unassigned capturers in the lobby — assigned ones move to their match card
+  const capturers = allCapturers.filter((p) => !matches.some((m) => m.liveCapturerIdentities.includes(p.identity)))
 
   // Explicitly subscribe to every capturer's camera so thumbnails always render
   useEffect(() => {
@@ -1936,7 +1949,7 @@ function BroadcasterLobbies({
 
   useEffect(() => {
     onRosterChange(
-      capturers.map((p) => ({ identity: p.identity, name: p.name })),
+      allCapturers.map((p) => ({ identity: p.identity, name: p.name })),
       commentators.map((p) => ({ identity: p.identity, name: p.name })),
       viewers.length,
     )
@@ -1968,7 +1981,7 @@ function BroadcasterLobbies({
       {/* Total participant counts */}
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4 }}>
         <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
-          <Text style={{ fontSize: 26, fontWeight: '900', color: '#2563eb' }}>{capturers.length}</Text>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: '#2563eb' }}>{allCapturers.length}</Text>
           <Text style={{ fontSize: 10, fontWeight: '600', color: '#6b7280', textAlign: 'center', marginTop: 2 }}>Capturers</Text>
         </View>
         <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#faf5ff', borderWidth: 1, borderColor: '#e9d5ff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
@@ -1987,10 +2000,10 @@ function BroadcasterLobbies({
           <Video size={16} color="#111" />
           <Text className="text-black font-semibold text-base">Camera lobby</Text>
         </View>
-        <Text className="text-gray-400 text-xs mb-3">Connected capturer feeds. Assign each one to a match.</Text>
+        <Text className="text-gray-400 text-xs mb-3">Unassigned capturer feeds. Assigned capturers move to their match card.</Text>
         {capturers.length === 0 ? (
           <View className="border border-gray-100 rounded-lg py-4 items-center">
-            <Text className="text-gray-400 text-sm">No capturers connected.</Text>
+            <Text className="text-gray-400 text-sm">{allCapturers.length > 0 ? 'All capturers assigned to matches.' : 'No capturers connected.'}</Text>
           </View>
         ) : (
           <View className="gap-2">
