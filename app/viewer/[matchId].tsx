@@ -77,6 +77,7 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   const participants = useRemoteParticipants()
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
   const [match, setMatch] = useState<Match | null>(null)
+  const [usageExceeded, setUsageExceeded] = useState(false)
   const pulseAnim = useRef(new Animated.Value(1)).current
 
   useEffect(() => {
@@ -107,6 +108,9 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
               }
             : prev,
         )
+      } else if (payload?.type === 'USAGE_EXCEEDED') {
+        setUsageExceeded(true)
+        setMatch((prev) => prev ? { ...prev, liveCapturerIdentities: [], liveCommentatorIdentities: [] } : prev)
       }
     } catch {}
   })
@@ -150,22 +154,38 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
           <Text className="text-white/40 text-sm font-medium">Back</Text>
         </Pressable>
 
-        {/* Centered waiting indicator */}
-        <View className="flex-1 items-center justify-center gap-5">
-          <Animated.View
-            style={{ opacity: pulseAnim }}
-            className="w-16 h-16 rounded-full bg-white/10 items-center justify-center"
-          >
-            <Mic size={28} color="rgba(255,255,255,0.5)" />
-          </Animated.View>
-          <View className="items-center gap-1.5">
-            <Text className="text-white/80 text-base font-bold">
-              {match?.name ?? 'Match'}
-            </Text>
-            <Text className="text-white/35 text-sm">
-              Waiting for stream to begin…
-            </Text>
-          </View>
+        {/* Centered waiting / usage-exceeded indicator */}
+        <View className="flex-1 items-center justify-center gap-5 px-8">
+          {usageExceeded ? (
+            <>
+              <View className="w-16 h-16 rounded-full bg-red-500/20 items-center justify-center">
+                <AlertTriangle size={28} color="#f87171" />
+              </View>
+              <View className="items-center gap-2">
+                <Text className="text-white/80 text-base font-bold text-center">Stream ended</Text>
+                <Text className="text-white/40 text-sm text-center">
+                  The organiser's streaming limit has been reached. The stream has been stopped.
+                </Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <Animated.View
+                style={{ opacity: pulseAnim }}
+                className="w-16 h-16 rounded-full bg-white/10 items-center justify-center"
+              >
+                <Mic size={28} color="rgba(255,255,255,0.5)" />
+              </Animated.View>
+              <View className="items-center gap-1.5">
+                <Text className="text-white/80 text-base font-bold">
+                  {match?.name ?? 'Match'}
+                </Text>
+                <Text className="text-white/35 text-sm">
+                  Waiting for stream to begin…
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Leave button at bottom */}

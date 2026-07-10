@@ -32,7 +32,7 @@ import {
   Pause,
   ChevronDown,
 } from 'lucide-react-native'
-import { LiveKitRoom, VideoTrack, useLocalParticipant, useTrackVolume, useRemoteParticipants, useTracks } from '@livekit/react-native'
+import { LiveKitRoom, VideoTrack, useLocalParticipant, useTrackVolume, useRemoteParticipants, useTracks, useDataChannel } from '@livekit/react-native'
 import { Track } from 'livekit-client'
 import { adminLogin } from './services/auth'
 import { fetchLiveKitToken, parseParticipantRole } from './services/livekit'
@@ -269,6 +269,11 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => v
                 onSwitchCameraReady={(fn) => {
                   switchCameraRef.current = fn
                 }}
+                onUsageExceeded={() => {
+                  setConnection(null)
+                  onLiveChange?.(false)
+                  setError('Streaming usage limit reached. Please upgrade your plan.')
+                }}
               />
             </LiveKitRoom>
           )}
@@ -306,12 +311,21 @@ function CapturerPreview({
   room,
   camera,
   onSwitchCameraReady,
+  onUsageExceeded,
 }: {
   room: string
   camera: 'front' | 'back'
   onSwitchCameraReady: (fn: () => Promise<boolean>) => void
+  onUsageExceeded: () => void
 }) {
   const { localParticipant, cameraTrack, lastCameraError, lastMicrophoneError } = useLocalParticipant()
+
+  useDataChannel((msg) => {
+    try {
+      const payload = JSON.parse(new TextDecoder().decode(msg.payload))
+      if (payload?.type === 'USAGE_EXCEEDED') onUsageExceeded()
+    } catch {}
+  })
 
   // NOTE: @livekit/react-native-webrtc's native CameraCaptureController.applyConstraints
   // (used by mediaStreamTrack._switchCamera()/applyConstraints()) ignores any new
@@ -521,7 +535,15 @@ function CommentatorPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) =
             onError={(err) => setError(err.message)}
             onMediaDeviceFailure={(failure) => setError(`Mic failed to start${failure ? `: ${failure}` : ''}. Check microphone permissions.`)}
           >
-            <CommentatorControls room={room} displayName={displayName} />
+            <CommentatorControls
+              room={room}
+              displayName={displayName}
+              onUsageExceeded={() => {
+                setConnection(null)
+                onLiveChange?.(false)
+                setError('Streaming usage limit reached. Please upgrade your plan.')
+              }}
+            />
           </LiveKitRoom>
         )}
       </View>
@@ -529,8 +551,15 @@ function CommentatorPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) =
   )
 }
 
-function CommentatorControls({ room, displayName }: { room: string; displayName: string }) {
+function CommentatorControls({ room, displayName, onUsageExceeded }: { room: string; displayName: string; onUsageExceeded: () => void }) {
   const { localParticipant, microphoneTrack, lastMicrophoneError } = useLocalParticipant()
+
+  useDataChannel((msg) => {
+    try {
+      const payload = JSON.parse(new TextDecoder().decode(msg.payload))
+      if (payload?.type === 'USAGE_EXCEEDED') onUsageExceeded()
+    } catch {}
+  })
   const micLevel = useTrackVolume(microphoneTrack?.track as any)
   const [isMuted, setIsMuted] = useState(false)
 
@@ -1601,6 +1630,14 @@ function BroadcasterLobbies({
 }) {
   const participants = useRemoteParticipants()
   const cameraTracks = useTracks([Track.Source.Camera])
+  const [usageExceeded, setUsageExceeded] = useState(false)
+
+  useDataChannel((msg) => {
+    try {
+      const payload = JSON.parse(new TextDecoder().decode(msg.payload))
+      if (payload?.type === 'USAGE_EXCEEDED') setUsageExceeded(true)
+    } catch {}
+  })
 
   const capturers = participants.filter((p) => parseParticipantRole(p.metadata) === 'capturer')
   const commentators = participants.filter((p) => parseParticipantRole(p.metadata) === 'commentator')
@@ -1629,6 +1666,15 @@ function BroadcasterLobbies({
 
   return (
     <View>
+      {usageExceeded && (
+        <View style={{ marginHorizontal: 24, marginTop: 16, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <AlertTriangle size={18} color="#dc2626" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#dc2626', fontWeight: '700', fontSize: 13 }}>Streaming limit reached</Text>
+            <Text style={{ color: '#b91c1c', fontSize: 12, marginTop: 2 }}>All capturers and commentators have been disconnected. Upgrade your plan to resume streaming.</Text>
+          </View>
+        </View>
+      )}
       {/* Total participant counts */}
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4 }}>
         <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}>
