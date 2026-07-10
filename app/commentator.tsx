@@ -16,7 +16,7 @@ import { fetchLiveKitToken } from './services/livekit'
 export default function Commentator() {
   const router = useRouter()
   const [eventId, setEventId] = useState<string | null>(null)
-  const [identity, setIdentity] = useState('comm-jc2o4g')
+  const [identity, setIdentity] = useState(() => 'comm-' + Math.random().toString(36).slice(2, 8))
   const [displayName, setDisplayName] = useState('Commentator')
   const [room, setRoom] = useState('live-switch')
 

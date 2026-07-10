@@ -65,7 +65,7 @@ const TABS: Tab[] = [
 
 function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => void }) {
   const [eventId, setEventId] = useState<string | null>(null)
-  const [identity, setIdentity] = useState('cam-aldmmy')
+  const [identity, setIdentity] = useState(() => 'cap-' + Math.random().toString(36).slice(2, 8))
   const [room, setRoom] = useState('live-switch')
   const [camera, setCamera] = useState<'front' | 'back'>('front')
   const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
@@ -361,7 +361,7 @@ function CapturerPreview({
 
 function CommentatorPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => void }) {
   const [eventId, setEventId] = useState<string | null>(null)
-  const [identity, setIdentity] = useState('comm-jc2o4g')
+  const [identity, setIdentity] = useState(() => 'comm-' + Math.random().toString(36).slice(2, 8))
   const [displayName, setDisplayName] = useState('Commentator')
   const [room, setRoom] = useState('live-switch')
   const [connection, setConnection] = useState<{ token: string; url: string } | null>(null)
@@ -694,8 +694,8 @@ interface MatchState {
   sport: Sport
   name: string
   liveStatus: MatchLiveStatus
-  liveCapturerIdentity: string | null
-  liveCommentatorIdentity: string | null
+  liveCapturerIdentities: string[]
+  liveCommentatorIdentities: string[]
   ytWhipUrl: string | null
   ytLiveUrl: string | null
   audioOn: boolean
@@ -746,8 +746,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
           sport,
           name: sm.name,
           liveStatus: sm.liveStatus as MatchLiveStatus,
-          liveCapturerIdentity: sm.liveCapturerIdentity,
-          liveCommentatorIdentity: sm.liveCommentatorIdentity,
+          liveCapturerIdentities: sm.liveCapturerIdentities ?? [],
+          liveCommentatorIdentities: sm.liveCommentatorIdentities ?? [],
           ytWhipUrl: sm.ytWhipUrl,
           ytLiveUrl: sm.ytLiveUrl,
           audioOn: existing?.audioOn ?? true,
@@ -796,8 +796,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
           sport: eventSport,
           name: created.name,
           liveStatus: created.liveStatus as MatchLiveStatus,
-          liveCapturerIdentity: created.liveCapturerIdentity,
-          liveCommentatorIdentity: created.liveCommentatorIdentity,
+          liveCapturerIdentities: created.liveCapturerIdentities ?? [],
+          liveCommentatorIdentities: created.liveCommentatorIdentities ?? [],
           ytWhipUrl: created.ytWhipUrl,
           ytLiveUrl: created.ytLiveUrl,
           audioOn: true,
@@ -923,7 +923,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
 
   const applyLiveSelection = async (
     id: string,
-    payload: { liveCapturerIdentity?: string | null; liveCommentatorIdentity?: string | null },
+    payload: { liveCapturerIdentities?: string[]; liveCommentatorIdentities?: string[] },
   ) => {
     setAssigningMatchId(id)
     try {
@@ -938,20 +938,28 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
 
   const assignCapturerToMatch = (capturerIdentity: string, matchId: string | null) => {
     if (matchId) {
-      applyLiveSelection(matchId, { liveCapturerIdentity: capturerIdentity })
+      // Replace: exactly one capturer per match — sending [id] displaces whoever was there
+      applyLiveSelection(matchId, { liveCapturerIdentities: [capturerIdentity] })
       return
     }
-    const current = matches.find(m => m.liveCapturerIdentity === capturerIdentity)
-    if (current) applyLiveSelection(current.id, { liveCapturerIdentity: null })
+    // Unassign
+    const current = matches.find(m => m.liveCapturerIdentities.includes(capturerIdentity))
+    if (current) {
+      applyLiveSelection(current.id, { liveCapturerIdentities: [] })
+    }
   }
 
   const assignCommentatorToMatch = (commentatorIdentity: string, matchId: string | null) => {
     if (matchId) {
-      applyLiveSelection(matchId, { liveCommentatorIdentity: commentatorIdentity })
+      // Replace: exactly one commentator per match
+      applyLiveSelection(matchId, { liveCommentatorIdentities: [commentatorIdentity] })
       return
     }
-    const current = matches.find(m => m.liveCommentatorIdentity === commentatorIdentity)
-    if (current) applyLiveSelection(current.id, { liveCommentatorIdentity: null })
+    // Unassign
+    const current = matches.find(m => m.liveCommentatorIdentities.includes(commentatorIdentity))
+    if (current) {
+      applyLiveSelection(current.id, { liveCommentatorIdentities: [] })
+    }
   }
 
   const clearLive = async (id: string) => {
@@ -961,7 +969,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
       }
       return { ...m, winner: null, racketScore: createRacketScore(m.sport as 'badminton' | 'pickleball') }
     })
-    await applyLiveSelection(id, { liveCapturerIdentity: null, liveCommentatorIdentity: null })
+    await applyLiveSelection(id, { liveCapturerIdentities: [], liveCommentatorIdentities: [] })
   }
 
   const declareWinner = async (id: string, side: Side) => {
@@ -981,8 +989,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
       updateMatch(id, m => ({
         ...m,
         liveStatus: updated.liveStatus as MatchLiveStatus,
-        liveCapturerIdentity: updated.liveCapturerIdentity,
-        liveCommentatorIdentity: updated.liveCommentatorIdentity,
+        liveCapturerIdentities: updated.liveCapturerIdentities ?? [],
+        liveCommentatorIdentities: updated.liveCommentatorIdentities ?? [],
         ytWhipUrl: updated.ytWhipUrl,
         ytLiveUrl: updated.ytLiveUrl,
       }))
@@ -1002,7 +1010,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
         try {
           const updated = await getMatch(matchId)
           if (updated.ytLiveUrl) {
-            updateMatch(matchId, m => ({ ...m, ytWhipUrl: updated.ytWhipUrl, ytLiveUrl: updated.ytLiveUrl }))
+            updateMatch(matchId, m => ({ ...m, ytWhipUrl: updated.ytWhipUrl ?? null, ytLiveUrl: updated.ytLiveUrl ?? null }))
             clearInterval(ytPollRef.current!)
             ytPollRef.current = null
             setYtPollingMatchId(null)
@@ -1031,7 +1039,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
   const handleYoutubeStop = async (matchId: string) => {
     try {
       const updated = await stopYoutubeStream(matchId)
-      updateMatch(matchId, m => ({ ...m, ytWhipUrl: updated.ytWhipUrl, ytLiveUrl: updated.ytLiveUrl }))
+      updateMatch(matchId, m => ({ ...m, ytWhipUrl: updated.ytWhipUrl ?? null, ytLiveUrl: updated.ytLiveUrl ?? null }))
     } catch (err: any) {
       setJoinError(err.response?.data?.message ?? 'Could not stop YouTube stream.')
     }
@@ -1239,7 +1247,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
             ) : (
               matches.map(match => {
                 const { nameA, nameB } = getNames(match)
-                const feedCount = (match.liveCapturerIdentity ? 1 : 0) + (match.liveCommentatorIdentity ? 1 : 0)
+                const feedCount = match.liveCapturerIdentities.length + match.liveCommentatorIdentities.length
                 const isEnded = match.liveStatus === 'ended'
                 return (
                   <View key={match.id} className="border border-gray-200 rounded-xl p-4 gap-4">
@@ -1259,7 +1267,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                           ? match.winner
                             ? `${match.winner === 'A' ? nameA : nameB} won`
                             : 'ended'
-                          : match.liveCapturerIdentity
+                          : match.liveCapturerIdentities.length > 0
                           ? 'live'
                           : 'no live feed'}
                       </Text>
@@ -1298,12 +1306,12 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
                         <Video size={12} color="#2563eb" />
                         <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>Capturer</Text>
-                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#2563eb' }}>{match.liveCapturerIdentity ? 1 : 0}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#2563eb' }}>{match.liveCapturerIdentities.length}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#faf5ff', borderWidth: 1, borderColor: '#e9d5ff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
                         <Mic size={12} color="#7c3aed" />
-                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>Commentator</Text>
-                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#7c3aed' }}>{match.liveCommentatorIdentity ? 1 : 0}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280' }}>Commentators</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: '#7c3aed' }}>{match.liveCommentatorIdentities.length}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
                         <Eye size={12} color="#059669" />
@@ -1383,39 +1391,59 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                       </View>
                     ) : (
                       <>
-                        <View className="border border-gray-200 rounded-xl p-4 gap-2">
-                          <View className="flex-row items-center gap-2">
-                            <Video size={14} color="#111" />
-                            <Text className="text-black text-sm font-semibold">
-                              {match.liveCapturerIdentity
-                                ? `Camera live: ${roster.capturers.find(p => p.identity === match.liveCapturerIdentity)?.name || match.liveCapturerIdentity}`
-                                : 'No capturer assigned'}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center justify-between">
-                            <View className="flex-row items-center gap-2">
-                              <Mic size={14} color="#111" />
+                        <View className="border border-gray-200 rounded-xl p-4 gap-3">
+                          <View className="gap-1.5">
+                            <View className="flex-row items-center gap-2 mb-1">
+                              <Video size={14} color="#111" />
                               <Text className="text-black text-sm font-semibold">
-                                {match.liveCommentatorIdentity
-                                  ? `Commentary live: ${roster.commentators.find(p => p.identity === match.liveCommentatorIdentity)?.name || match.liveCommentatorIdentity}`
-                                  : 'No commentator assigned'}
+                                {match.liveCapturerIdentities.length > 0
+                                  ? `${match.liveCapturerIdentities.length} camera(s) live`
+                                  : 'No capturer assigned'}
                               </Text>
                             </View>
-                            {match.liveCommentatorIdentity && (
-                              <Pressable
-                                onPress={() => toggleCommentaryMute(match.id)}
-                                className="border border-gray-200 rounded-lg px-3 py-1.5 flex-row items-center gap-1.5"
-                              >
-                                {match.commentaryMuted ? (
-                                  <VolumeX size={14} color="#9ca3af" />
-                                ) : (
-                                  <Mic size={14} color="#9ca3af" />
-                                )}
-                                <Text className="text-gray-400 text-xs font-medium">
-                                  {match.commentaryMuted ? 'Unmute' : 'Mute'}
+                            {match.liveCapturerIdentities.map(id => (
+                              <View key={id} className="flex-row items-center gap-2 pl-6">
+                                <View className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                <Text className="text-gray-600 text-xs flex-1">
+                                  {roster.capturers.find(p => p.identity === id)?.name || id}
                                 </Text>
-                              </Pressable>
-                            )}
+                              </View>
+                            ))}
+                          </View>
+                          <View className="gap-1.5">
+                            <View className="flex-row items-center justify-between">
+                              <View className="flex-row items-center gap-2">
+                                <Mic size={14} color="#111" />
+                                <Text className="text-black text-sm font-semibold">
+                                  {match.liveCommentatorIdentities.length > 0
+                                    ? `${match.liveCommentatorIdentities.length} commentator(s) live`
+                                    : 'No commentator assigned'}
+                                </Text>
+                              </View>
+                              {match.liveCommentatorIdentities.length > 0 && (
+                                <Pressable
+                                  onPress={() => toggleCommentaryMute(match.id)}
+                                  className="border border-gray-200 rounded-lg px-3 py-1.5 flex-row items-center gap-1.5"
+                                >
+                                  {match.commentaryMuted ? (
+                                    <VolumeX size={14} color="#9ca3af" />
+                                  ) : (
+                                    <Mic size={14} color="#9ca3af" />
+                                  )}
+                                  <Text className="text-gray-400 text-xs font-medium">
+                                    {match.commentaryMuted ? 'Unmute all' : 'Mute all'}
+                                  </Text>
+                                </Pressable>
+                              )}
+                            </View>
+                            {match.liveCommentatorIdentities.map(id => (
+                              <View key={id} className="flex-row items-center gap-2 pl-6">
+                                <View className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                <Text className="text-gray-600 text-xs flex-1">
+                                  {roster.commentators.find(p => p.identity === id)?.name || id}
+                                </Text>
+                              </View>
+                            ))}
                           </View>
                           <Text className="text-gray-400 text-xs">
                             Assign feeds from the Camera lobby / Commentator lobby above.
@@ -1467,16 +1495,17 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
   const allTracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
   const sessionsRef = useRef<Map<string, WhipSession>>(new Map())
 
-  const getVideoMST = (capturerIdentity: string | null): any => {
-    if (!capturerIdentity) return null
+  const getVideoMST = (capturerIdentities: string[]): any => {
+    const primaryId = capturerIdentities[0]
+    if (!primaryId) return null
     const ref = allTracks.find(
-      t => t.participant.identity === capturerIdentity && t.source === Track.Source.Camera,
+      t => t.participant.identity === primaryId && t.source === Track.Source.Camera,
     )
     return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
   }
 
-  const getAudioMST = (commentatorIdentity: string | null, capturerIdentity: string | null): any => {
-    const identity = commentatorIdentity || capturerIdentity
+  const getAudioMST = (commentatorIdentities: string[], capturerIdentities: string[]): any => {
+    const identity = commentatorIdentities[0] ?? capturerIdentities[0]
     if (!identity) return null
     const ref = allTracks.find(
       t => t.participant.identity === identity && t.source === Track.Source.Microphone,
@@ -1515,8 +1544,8 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
       const session = sessionsRef.current.get(match.id)
       if (!session) continue
       try {
-        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentity))
-        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentity, match.liveCapturerIdentity))
+        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentities))
+        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentities, match.liveCapturerIdentities))
       } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1529,8 +1558,8 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
       const videoTx = pc.addTransceiver('video', { direction: 'sendonly' })
       const audioTx = pc.addTransceiver('audio', { direction: 'sendonly' })
-      const videoMST = getVideoMST(match.liveCapturerIdentity)
-      const audioMST = getAudioMST(match.liveCommentatorIdentity, match.liveCapturerIdentity)
+      const videoMST = getVideoMST(match.liveCapturerIdentities)
+      const audioMST = getAudioMST(match.liveCommentatorIdentities, match.liveCapturerIdentities)
       if (videoMST) videoTx.sender.replaceTrack(videoMST)
       if (audioMST) audioTx.sender.replaceTrack(audioMST)
       const offer = await pc.createOffer()
@@ -1578,6 +1607,17 @@ function BroadcasterLobbies({
   const viewers = participants.filter((p) => parseParticipantRole(p.metadata) === 'viewer')
   const assignableMatches = matches.filter((m) => m.liveStatus !== 'ended')
 
+  // Explicitly subscribe to every capturer's camera so thumbnails always render
+  useEffect(() => {
+    for (const p of capturers) {
+      const pub = p.getTrackPublication(Track.Source.Camera)
+      if (pub && !pub.isSubscribed) {
+        pub.setSubscribed(true)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants])
+
   useEffect(() => {
     onRosterChange(
       capturers.map((p) => ({ identity: p.identity, name: p.name })),
@@ -1620,7 +1660,7 @@ function BroadcasterLobbies({
           <View className="gap-2">
             {capturers.map((p) => {
               const trackRef = cameraTracks.find((t) => t.participant.identity === p.identity)
-              const assignedMatch = matches.find((m) => m.liveCapturerIdentity === p.identity)
+              const assignedMatch = matches.find((m) => m.liveCapturerIdentities.includes(p.identity))
               return (
                 <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
                   <View className="flex-row items-center gap-3">
@@ -1662,7 +1702,7 @@ function BroadcasterLobbies({
         ) : (
           <View className="gap-2">
             {commentators.map((p) => {
-              const assignedMatch = matches.find((m) => m.liveCommentatorIdentity === p.identity)
+              const assignedMatch = matches.find((m) => m.liveCommentatorIdentities.includes(p.identity))
               return (
                 <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
                   <View className="flex-1">

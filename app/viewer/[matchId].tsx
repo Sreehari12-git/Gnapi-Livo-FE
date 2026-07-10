@@ -102,8 +102,8 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
           prev
             ? {
                 ...prev,
-                liveCapturerIdentity: payload.liveCapturerIdentity ?? null,
-                liveCommentatorIdentity: payload.liveCommentatorIdentity ?? null,
+                liveCapturerIdentities: payload.liveCapturerIdentities ?? [],
+                liveCommentatorIdentities: payload.liveCommentatorIdentities ?? [],
               }
             : prev,
         )
@@ -112,12 +112,12 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   })
 
   useEffect(() => {
-    const desiredCapturer = match?.liveCapturerIdentity ?? null
-    const desiredCommentator = match?.liveCommentatorIdentity ?? null
+    const capturerIds = match?.liveCapturerIdentities ?? []
+    const commentatorIds = match?.liveCommentatorIdentities ?? []
 
     participants.forEach((p) => {
-      const isCapturer = p.identity === desiredCapturer
-      const wantsMic = isCapturer || p.identity === desiredCommentator
+      const isCapturer = capturerIds.includes(p.identity)
+      const wantsMic = isCapturer || commentatorIds.includes(p.identity)
 
       const cameraPub = p.getTrackPublication(Track.Source.Camera)
       if (cameraPub && cameraPub.isSubscribed !== isCapturer) {
@@ -129,12 +129,14 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
         micPub.setSubscribed(wantsMic)
       }
     })
-  }, [match?.liveCapturerIdentity, match?.liveCommentatorIdentity, participants])
+  }, [match?.liveCapturerIdentities, match?.liveCommentatorIdentities, participants])
 
+  // Show the primary (first) capturer's video feed
+  const primaryCapturerId = match?.liveCapturerIdentities?.[0] ?? null
   const videoTrackRef = tracks.find(
-    (t) => t.source === Track.Source.Camera && t.participant.identity === match?.liveCapturerIdentity
+    (t) => t.source === Track.Source.Camera && t.participant.identity === primaryCapturerId
   )
-  const isLive = !!match?.liveCapturerIdentity
+  const isLive = (match?.liveCapturerIdentities?.length ?? 0) > 0
 
   if (!isLive) {
     return (

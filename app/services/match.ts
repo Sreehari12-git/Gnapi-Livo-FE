@@ -6,8 +6,8 @@ export type Match = {
   sport: string
   name: string
   liveStatus: string
-  liveCapturerIdentity: string | null
-  liveCommentatorIdentity: string | null
+  liveCapturerIdentities: string[]
+  liveCommentatorIdentities: string[]
   ytBroadcastId: string | null
   ytStreamId: string | null
   ytWhipUrl: string | null
@@ -54,7 +54,7 @@ export const deleteMatch = async (id: string) => {
 
 export const setMatchLiveSelection = async (
   id: string,
-  payload: { liveCapturerIdentity?: string | null; liveCommentatorIdentity?: string | null }
+  payload: { liveCapturerIdentities?: string[]; liveCommentatorIdentities?: string[] }
 ) => {
   const response = await api.post(`/matches/${id}/live-selection`, payload)
   return response.data as Match
