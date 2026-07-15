@@ -1,5 +1,6 @@
 import { View, Text, Pressable, TextInput, ScrollView, Linking } from 'react-native'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import ViewShot, { captureRef } from 'react-native-view-shot'
 import { useRouter } from 'expo-router'
 import {
   ChevronLeft,
@@ -38,6 +39,10 @@ import {
   stopYoutubeStream,
 } from './services/match'
 import EventIdGate from './Eventidgate'
+
+const DETECTOR_URL = 'http://192.168.1.100:8000' // update to your objdetector backend IP
+const ANALYSIS_INTERVAL_MS = 1500
+const DETECTOR_SCORE_THRESHOLD = 0.1
 
 type Sport = 'pickleball' | 'badminton' | 'football'
 type Side = 'A' | 'B'
@@ -449,6 +454,13 @@ export default function BroadcasterDashboard() {
     }
   }
 
+  const autoSwitch = useCallback(async (matchId: string, capturerIdentity: string) => {
+    try {
+      await setMatchLiveSelection(matchId, { liveCapturerIdentity: capturerIdentity })
+      updateMatch(matchId, m => ({ ...m, liveCapturerIdentity: capturerIdentity }))
+    } catch {}
+  }, [])
+
   const getNames = (match: MatchState): { nameA: string; nameB: string } => {
     if (match.sport === 'football' && match.footballScore) {
       return { nameA: match.footballScore.nameA, nameB: match.footballScore.nameB }
@@ -589,6 +601,8 @@ export default function BroadcasterDashboard() {
           />
           {/* Manages one WHIP → YouTube connection per match that has ytWhipUrl set */}
           <BroadcasterWhipManager matches={matches} />
+          {/* Auto-switches live capturer based on ball detection */}
+          <AutoDirector matches={matches} onSwitch={autoSwitch} />
         </LiveKitRoom>
       )}
 
@@ -942,6 +956,99 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
   }, [])
 
   return null
+}
+
+function AutoDirector({
+  matches,
+  onSwitch,
+}: {
+  matches: MatchState[]
+  onSwitch: (matchId: string, capturerIdentity: string) => void
+}) {
+  const participants = useRemoteParticipants()
+  const cameraTracks = useTracks([Track.Source.Camera])
+  const capturers = participants.filter(p => parseParticipantRole(p.metadata) === 'capturer')
+
+  const viewShotRefs = useRef<Map<string, any>>(new Map())
+  const lastWinnerRef = useRef<string | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+
+    intervalRef.current = setInterval(async () => {
+      const activeMatches = matches.filter(m => m.liveStatus !== 'ended')
+      if (activeMatches.length === 0 || capturers.length < 2) return
+
+      const form = new FormData()
+      let frameCount = 0
+
+      for (const capturer of capturers) {
+        const ref = viewShotRefs.current.get(capturer.identity)
+        if (!ref) continue
+        try {
+          const uri = await captureRef(ref, { format: 'jpg', quality: 0.5 })
+          form.append(capturer.identity, { uri, type: 'image/jpeg', name: 'frame.jpg' } as any)
+          frameCount++
+        } catch {}
+      }
+
+      if (frameCount < 2) return
+
+      form.append('sport', activeMatches[0].sport)
+
+      try {
+        const res = await fetch(`${DETECTOR_URL}/analyze`, { method: 'POST', body: form })
+        if (!res.ok) return
+        const data = await res.json()
+
+        const winner: string | null = data.bestCamera
+        const score: number = winner ? (data.scores[winner] ?? 0) : 0
+
+        if (!winner || score < DETECTOR_SCORE_THRESHOLD) {
+          lastWinnerRef.current = null
+          return
+        }
+
+        // Only switch if same capturer wins 2 cycles in a row (prevents flickering)
+        if (winner === lastWinnerRef.current) {
+          for (const match of activeMatches) {
+            if (match.liveCapturerIdentity !== winner) {
+              onSwitch(match.id, winner)
+            }
+          }
+        }
+
+        lastWinnerRef.current = winner
+      } catch {}
+    }, ANALYSIS_INTERVAL_MS)
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+  }, [capturers, matches, onSwitch])
+
+  // Hidden off-screen VideoTrack views — rendered so native video is active, but invisible to user
+  return (
+    <View style={{ position: 'absolute', left: -9999, top: 0 }}>
+      {capturers.map(capturer => {
+        const trackRef = cameraTracks.find(t => t.participant.identity === capturer.identity)
+        if (!trackRef) return null
+        return (
+          <ViewShot
+            key={capturer.identity}
+            ref={(ref: any) => {
+              if (ref) viewShotRefs.current.set(capturer.identity, ref)
+              else viewShotRefs.current.delete(capturer.identity)
+            }}
+            style={{ width: 160, height: 90 }}
+          >
+            <VideoTrack trackRef={trackRef} style={{ width: 160, height: 90 }} />
+          </ViewShot>
+        )
+      })}
+    </View>
+  )
 }
 
 function StatPill({ label, count, color }: { label: string; count: number; color: string }) {

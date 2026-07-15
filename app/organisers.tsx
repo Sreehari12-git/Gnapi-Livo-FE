@@ -35,7 +35,7 @@ import {
   Cpu,
   X,
 } from 'lucide-react-native'
-import { captureRef } from 'react-native-view-shot'
+import ViewShot, { captureRef } from 'react-native-view-shot'
 import { AI_DIRECTOR_URL } from '../envdata'
 import { LiveKitRoom, VideoTrack, useLocalParticipant, useTrackVolume, useRemoteParticipants, useTracks, useDataChannel } from '@livekit/react-native'
 import { Track } from 'livekit-client'
@@ -770,6 +770,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
   const ytPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [aiEnabledMap, setAiEnabledMap] = useState<Record<string, boolean>>({})
   const [aiStatusMap, setAiStatusMap] = useState<Record<string, string>>({})
+  const [whipStatusMap, setWhipStatusMap] = useState<Record<string, WhipStatus>>({})
 
   const refreshMatches = async () => {
     if (!eventId) return
@@ -1041,8 +1042,11 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
     })
   }
 
-  const handleAiSwitch = (matchId: string, identity: string) => {
-    applyLiveSelection(matchId, { liveCapturerIdentities: [identity] })
+  const handleAiSwitch = async (matchId: string, identity: string) => {
+    const match = matches.find(m => m.id === matchId)
+    if (!match) return
+    const rest = match.liveCapturerIdentities.filter(id => id !== identity)
+    await applyLiveSelection(matchId, { liveCapturerIdentities: [identity, ...rest] })
   }
 
   const clearLive = async (id: string) => {
@@ -1324,7 +1328,10 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
               onAiSwitch={handleAiSwitch}
               onAiStatusUpdate={(matchId, status) => setAiStatusMap(prev => ({ ...prev, [matchId]: status }))}
             />
-            <BroadcasterWhipManager matches={matches} />
+            <BroadcasterWhipManager
+              matches={matches}
+              onStatusChange={(matchId, status) => setWhipStatusMap(prev => ({ ...prev, [matchId]: status }))}
+            />
           </LiveKitRoom>
         )}
 
@@ -1362,6 +1369,18 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                           ? 'live'
                           : 'no live feed'}
                       </Text>
+                      {(() => {
+                        const ws = whipStatusMap[match.id]
+                        if (!ws || ws.state === 'idle') return null
+                        const color = ws.state === 'connected' ? '#16a34a' : ws.state === 'failed' ? '#dc2626' : '#d97706'
+                        return (
+                          <View style={{ backgroundColor: color + '18', borderWidth: 1, borderColor: color + '44', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ color, fontSize: 10, fontWeight: '600' }}>
+                              YT: {ws.state === 'connected' ? '● LIVE' : ws.state === 'failed' ? `✕ ${ws.error}` : `⟳ ${ws.error ?? ws.state}`}
+                            </Text>
+                          </View>
+                        )
+                      })()}
                       <View className="flex-row flex-wrap items-center gap-2">
                         <Pressable
                           onPress={() => toggleAudio(match.id)}
@@ -1681,8 +1700,9 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
 }
 
 type WhipSession = { pc: any; videoSender: any; audioSender: any }
+type WhipStatus = { state: 'idle' | 'connecting' | 'connected' | 'failed'; error?: string }
 
-function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
+function BroadcasterWhipManager({ matches, onStatusChange }: { matches: MatchState[]; onStatusChange: (matchId: string, status: WhipStatus) => void }) {
   const allTracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
   const sessionsRef = useRef<Map<string, WhipSession>>(new Map())
 
@@ -1704,12 +1724,16 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
     return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
   }
 
-  const ytKey = matches.map(m => `${m.id}=${m.ytWhipUrl ?? ''}`).join('|')
+  // Key includes WHIP URL + primary capturer — session opens only when both are present, and reopens if capturer changes
+  const ytKey = matches
+    .map(m => `${m.id}=${m.ytWhipUrl ?? ''}:${m.liveCapturerIdentities[0] ?? ''}`)
+    .join('|')
 
   useEffect(() => {
+    // Only open a session when the match has a WHIP URL AND at least one capturer assigned
     const desired = new Map(
       matches
-        .filter(m => m.ytWhipUrl && m.liveStatus !== 'ended')
+        .filter(m => m.ytWhipUrl && m.liveStatus !== 'ended' && m.liveCapturerIdentities.length > 0)
         .map(m => [m.id, m]),
     )
     for (const [id, session] of sessionsRef.current.entries()) {
@@ -1737,34 +1761,88 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
       try {
         session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentities))
         session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentities, match.liveCapturerIdentities))
-      } catch {}
+      } catch (e) {
+        console.warn('[WHIP] replaceTrack failed', e)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allTracks, assignKey])
 
   async function openSession(match: MatchState) {
+    onStatusChange(match.id, { state: 'connecting' })
     try {
       const RTCPeerConnection = (globalThis as any).RTCPeerConnection
       const RTCSessionDescription = (globalThis as any).RTCSessionDescription
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
-      const videoTx = pc.addTransceiver('video', { direction: 'sendonly' })
-      const audioTx = pc.addTransceiver('audio', { direction: 'sendonly' })
+
       const videoMST = getVideoMST(match.liveCapturerIdentities)
       const audioMST = getAudioMST(match.liveCommentatorIdentities, match.liveCapturerIdentities)
-      if (videoMST) videoTx.sender.replaceTrack(videoMST)
-      if (audioMST) audioTx.sender.replaceTrack(audioMST)
+
+      onStatusChange(match.id, { state: 'connecting', error: `video track: ${videoMST ? 'OK' : 'MISSING'} | audio: ${audioMST ? 'OK' : 'none'}` })
+
+      const videoTx = pc.addTransceiver(videoMST ?? 'video', { direction: 'sendonly' })
+      const audioTx = pc.addTransceiver(audioMST ?? 'audio', { direction: 'sendonly' })
+
       const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
+      const sdpH264 = preferH264(offer.sdp)
+      await pc.setLocalDescription({ type: 'offer', sdp: sdpH264 })
+
+      // Wait for ICE gathering to complete (max 5s)
+      onStatusChange(match.id, { state: 'connecting', error: 'gathering ICE…' })
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') { resolve(); return }
+        const check = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', check); resolve() } }
+        pc.addEventListener('icegatheringstatechange', check)
+        setTimeout(resolve, 5000)
+      })
+
+      const finalSdp = pc.localDescription?.sdp ?? sdpH264
+      onStatusChange(match.id, { state: 'connecting', error: 'sending offer to YouTube…' })
+
       const res = await fetch(match.ytWhipUrl!, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
-        body: offer.sdp,
+        body: finalSdp,
       })
-      if (!res.ok) throw new Error(`WHIP ${res.status}`)
+
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`)
+      }
+
       const answerSdp = await res.text()
       await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }))
       sessionsRef.current.set(match.id, { pc, videoSender: videoTx.sender, audioSender: audioTx.sender })
-    } catch {}
+      onStatusChange(match.id, { state: 'connected' })
+
+      pc.addEventListener('connectionstatechange', () => {
+        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          onStatusChange(match.id, { state: 'failed', error: `ICE ${pc.connectionState}` })
+        }
+      })
+    } catch (e: any) {
+      onStatusChange(match.id, { state: 'failed', error: String(e?.message ?? e) })
+    }
+  }
+
+  function preferH264(sdp: string): string {
+    // Find H.264 payload type in the SDP and move it to the front for video m-line
+    const lines = sdp.split('\r\n')
+    const h264Regex = /^a=rtpmap:(\d+) H264\//i
+    let h264Pt: string | null = null
+    for (const line of lines) {
+      const m = line.match(h264Regex)
+      if (m) { h264Pt = m[1]; break }
+    }
+    if (!h264Pt) return sdp // H.264 not in offer — return unchanged
+
+    return lines.map(line => {
+      if (!line.startsWith('m=video')) return line
+      // m=video PORT RTP/SAVPF PT1 PT2 ...  → move h264Pt to front
+      const parts = line.split(' ')
+      const pts = parts.slice(3).filter(p => p !== h264Pt)
+      return [...parts.slice(0, 3), h264Pt, ...pts].join(' ')
+    }).join('\r\n')
   }
 
   useEffect(() => () => {
@@ -1803,7 +1881,7 @@ function BroadcasterLobbies({
   onRosterChange: (capturers: RosterParticipant[], commentators: RosterParticipant[], viewerCount: number) => void
   onCameraTracksChange: (tracks: any[]) => void
   aiEnabledMap: Record<string, boolean>
-  onAiSwitch: (matchId: string, identity: string) => void
+  onAiSwitch: (matchId: string, identity: string) => Promise<void> | void
   onAiStatusUpdate: (matchId: string, status: string) => void
 }) {
   const participants = useRemoteParticipants()
@@ -1818,84 +1896,97 @@ function BroadcasterLobbies({
   const aiEnabledMapRef = useRef(aiEnabledMap)
   useEffect(() => { aiEnabledMapRef.current = aiEnabledMap }, [aiEnabledMap])
 
-  const captureViewRefs = useRef<Map<string, React.RefObject<View | null>>>(new Map())
-  const aiIntervalRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
-  const aiConsecutiveWinsRef = useRef<Record<string, Record<string, number>>>({})
+  // Keep stable refs for callbacks so the setInterval closure never goes stale
+  const onAiSwitchRef = useRef<(matchId: string, identity: string) => Promise<void> | void>(onAiSwitch)
+  useEffect(() => { onAiSwitchRef.current = onAiSwitch }, [onAiSwitch])
+  const onAiStatusUpdateRef = useRef(onAiStatusUpdate)
+  useEffect(() => { onAiStatusUpdateRef.current = onAiStatusUpdate }, [onAiStatusUpdate])
 
-  const getOrCreateCaptureRef = (identity: string): React.RefObject<View | null> => {
+  const captureViewRefs = useRef<Map<string, React.RefObject<ViewShot | null>>>(new Map())
+  const aiIntervalRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
+  const aiSwitchingRef = useRef<Set<string>>(new Set())
+
+  const getOrCreateCaptureRef = (identity: string): React.RefObject<ViewShot | null> => {
     if (!captureViewRefs.current.has(identity)) {
-      captureViewRefs.current.set(identity, React.createRef<View | null>())
+      captureViewRefs.current.set(identity, React.createRef<ViewShot | null>())
     }
     return captureViewRefs.current.get(identity)!
   }
 
   const runAiPoll = async (matchId: string) => {
+    if (aiSwitchingRef.current.has(matchId)) return
     const match = matchesRef.current.find(m => m.id === matchId)
-    if (!match || match.liveCapturerIdentities.length === 0) return
+    if (!match || match.liveCapturerIdentities.length < 2) return
     if (!aiEnabledMapRef.current[matchId]) return
 
     const formData = new FormData()
-    formData.append('sport', match.sport)
+    // Fallback to any_ball if sport is not mapped — Python handles the rest
+    formData.append('sport', match.sport || 'any_ball')
 
     let frameCount = 0
+    const captureErrors: string[] = []
     for (const identity of match.liveCapturerIdentities) {
       const viewRef = captureViewRefs.current.get(identity)
-      if (!viewRef?.current) continue
+      if (!viewRef?.current) {
+        captureErrors.push(`${identity.slice(-6)}: no view`)
+        continue
+      }
       try {
-        const uri = await captureRef(viewRef as any, { format: 'jpg', quality: 0.8 })
+        const uri = await viewRef.current.capture!()
         formData.append(identity, { uri, type: 'image/jpeg', name: `${identity}.jpg` } as any)
         frameCount++
-      } catch {}
+      } catch (e) {
+        captureErrors.push(`${identity.slice(-6)}: ${String(e).slice(0, 30)}`)
+      }
     }
 
     if (frameCount === 0) {
-      onAiStatusUpdate(matchId, 'Waiting for camera frames…')
+      const detail = captureErrors.length ? ` (${captureErrors.join(', ')})` : ''
+      onAiStatusUpdateRef.current(matchId, `Waiting for frames…${detail}`)
       return
     }
 
     try {
       const res = await fetch(`${AI_DIRECTOR_URL}/analyze`, { method: 'POST', body: formData })
       if (!res.ok) {
-        onAiStatusUpdate(matchId, 'AI service error — retrying…')
+        onAiStatusUpdateRef.current(matchId, `AI HTTP ${res.status} — retrying…`)
         return
       }
       const { bestCamera, scores } = await res.json() as { bestCamera: string; scores: Record<string, number> }
 
-      const currentCam = match.liveCapturerIdentities[0]
+      const currentCam = matchesRef.current.find(m => m.id === matchId)?.liveCapturerIdentities[0]
       const allZero = !bestCamera || Object.values(scores).every(s => s === 0)
 
       if (allZero) {
-        onAiStatusUpdate(matchId, 'No ball detected — holding current')
+        const scoresStr = Object.entries(scores).map(([k, v]) => `${k.slice(-6)}:${v.toFixed(2)}`).join(' ')
+        onAiStatusUpdateRef.current(matchId, `No object detected${scoresStr ? ` [${scoresStr}]` : ''}`)
         return
       }
+
+      const sc = scores[bestCamera]?.toFixed(2) ?? '—'
 
       if (bestCamera === currentCam) {
-        aiConsecutiveWinsRef.current[matchId] = {}
-        const sc = scores[currentCam]?.toFixed(2) ?? '—'
-        onAiStatusUpdate(matchId, `Holding ${currentCam.slice(-6)} (score ${sc})`)
+        onAiStatusUpdateRef.current(matchId, `● ${currentCam.slice(-6)} best (score ${sc})`)
         return
       }
 
-      if (!aiConsecutiveWinsRef.current[matchId]) aiConsecutiveWinsRef.current[matchId] = {}
-      const wins = aiConsecutiveWinsRef.current[matchId]
-      wins[bestCamera] = (wins[bestCamera] ?? 0) + 1
-      const sc = scores[bestCamera]?.toFixed(2) ?? '—'
-      onAiStatusUpdate(matchId, `${bestCamera.slice(-6)} winning (${wins[bestCamera]}/2, score ${sc})`)
-
-      if (wins[bestCamera] >= 2) {
-        aiConsecutiveWinsRef.current[matchId] = {}
-        onAiSwitch(matchId, bestCamera)
-        onAiStatusUpdate(matchId, `Switched to ${bestCamera.slice(-6)} (score ${sc})`)
+      // Switch immediately — no consecutive-win requirement; ball in frame = switch now
+      onAiStatusUpdateRef.current(matchId, `⇄ Switching to ${bestCamera.slice(-6)} (score ${sc})…`)
+      aiSwitchingRef.current.add(matchId)
+      try {
+        await onAiSwitchRef.current(matchId, bestCamera)
+      } finally {
+        aiSwitchingRef.current.delete(matchId)
       }
-    } catch {
-      onAiStatusUpdate(matchId, 'AI service error — retrying…')
+      onAiStatusUpdateRef.current(matchId, `● ${bestCamera.slice(-6)} LIVE (score ${sc})`)
+    } catch (e) {
+      onAiStatusUpdateRef.current(matchId, `AI error: ${String(e).slice(0, 80)}`)
     }
   }
 
   useEffect(() => {
     for (const [matchId, enabled] of Object.entries(aiEnabledMap)) {
       if (enabled && !aiIntervalRefs.current.has(matchId)) {
-        aiConsecutiveWinsRef.current[matchId] = {}
         const id = setInterval(() => { void runAiPoll(matchId) }, 2000)
         aiIntervalRefs.current.set(matchId, id)
       } else if (!enabled) {
@@ -1903,7 +1994,6 @@ function BroadcasterLobbies({
         if (existing !== undefined) {
           clearInterval(existing)
           aiIntervalRefs.current.delete(matchId)
-          aiConsecutiveWinsRef.current[matchId] = {}
         }
       }
     }
@@ -1936,9 +2026,9 @@ function BroadcasterLobbies({
   // Only show unassigned capturers in the lobby — assigned ones move to their match card
   const capturers = allCapturers.filter((p) => !matches.some((m) => m.liveCapturerIdentities.includes(p.identity)))
 
-  // Explicitly subscribe to every capturer's camera so thumbnails always render
+  // Subscribe to ALL capturers' cameras (including assigned ones) so AI frame capture works
   useEffect(() => {
-    for (const p of capturers) {
+    for (const p of allCapturers) {
       const pub = p.getTrackPublication(Track.Source.Camera)
       if (pub && !pub.isSubscribed) {
         pub.setSubscribed(true)
@@ -1958,14 +2048,21 @@ function BroadcasterLobbies({
 
   return (
     <View>
-      {/* Hidden full-resolution VideoTrack views for AI frame capture */}
-      <View style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}>
-        {cameraTracks.map(trackRef => {
-          const ref = getOrCreateCaptureRef(trackRef.participant.identity)
+      {/* Hidden full-resolution VideoTrack views for AI frame capture.
+          Rendered off-screen (not opacity:0) so the GPU actually composites video.
+          Keyed by allCapturers (not cameraTracks) so assigned capturers get a ref
+          immediately, before their track appears in useTracks. */}
+      {/* scale(0.001) makes views visually invisible but keeps them fully registered
+          in the native view hierarchy so captureRef can find them */}
+      <View style={{ position: 'absolute', left: 0, top: 0, transform: [{ scale: 0.001 }] }} pointerEvents="none">
+        {allCapturers.map(participant => {
+          const trackRef = cameraTracks.find(t => t.participant.identity === participant.identity)
+          const ref = getOrCreateCaptureRef(participant.identity)
+          if (!trackRef) return <ViewShot key={participant.identity} ref={ref} style={{ width: 1, height: 1 }} />
           return (
-            <View key={trackRef.participant.identity} ref={ref} style={{ width: 640, height: 360 }}>
+            <ViewShot key={participant.identity} ref={ref} style={{ width: 640, height: 360 }} options={{ format: 'jpg', quality: 0.7 }}>
               <VideoTrack trackRef={trackRef} style={{ width: 640, height: 360 }} />
-            </View>
+            </ViewShot>
           )
         })}
       </View>

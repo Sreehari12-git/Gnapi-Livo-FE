@@ -196,7 +196,12 @@ function SubscriptionTab() {
       console.log(all)
       setCurrent(sub)
       const currentAmount = sub?.plan?.amount ?? 0
-      setUpgradePlans(all.filter(p => p.amount > currentAmount))
+      const higherPlans = all.filter(p => p.amount > currentAmount)
+      // When limit is exhausted, also include the current plan so user can renew it
+      const usageExhausted = stats && stats.remainingMinutes <= 0
+      const currentPlan = all.find(p => p.id === sub?.plan?.id)
+      const renewalPlan = usageExhausted && currentPlan ? [currentPlan] : []
+      setUpgradePlans([...renewalPlan, ...higherPlans])
       setUsageStats(stats)
       console.log(stats);
     } catch {
@@ -306,11 +311,15 @@ function SubscriptionTab() {
 
       {upgradePlans.length > 0 && (
         <View>
-          <Text className="text-white/30 text-xs font-semibold mb-2">Upgrade to</Text>
-          {upgradePlans.map(plan => (
+          <Text className="text-white/30 text-xs font-semibold mb-2">
+            {upgradePlans.some(p => p.id === current?.plan?.id) ? 'Renew or upgrade' : 'Upgrade to'}
+          </Text>
+          {upgradePlans.map(plan => {
+            const isCurrentPlan = plan.id === current?.plan?.id
+            return (
             <View key={plan.id} className="bg-orange-500/10 border border-orange-500/20 rounded-2xl px-5 py-4 mb-2 flex-row items-center gap-3">
               <View className="flex-1">
-                <Text className="text-white text-sm font-black">{plan.name}</Text>
+                <Text className="text-white text-sm font-black">{plan.name}{isCurrentPlan ? ' (current)' : ''}</Text>
                 <Text className="text-orange-400 text-xs mt-0.5">{plan.usageLimitMinutes} min</Text>
               </View>
               <Pressable
@@ -323,12 +332,12 @@ function SubscriptionTab() {
                 ) : (
                   <>
                     <ArrowUpCircle size={14} color="#0A0E16" />
-                    <Text className="text-[#0A0E16] text-xs font-black">₹{plan.amount}</Text>
+                    <Text className="text-[#0A0E16] text-xs font-black">{isCurrentPlan ? 'Renew' : 'Upgrade'} ₹{plan.amount}</Text>
                   </>
                 )}
               </Pressable>
             </View>
-          ))}
+          )})}
         </View>
       )}
     </ScrollView>
