@@ -1330,6 +1330,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
             />
             <BroadcasterWhipManager
               matches={matches}
+              cameraTrackRefs={cameraTrackRefs}
               onStatusChange={(matchId, status) => setWhipStatusMap(prev => ({ ...prev, [matchId]: status }))}
             />
           </LiveKitRoom>
@@ -1702,17 +1703,21 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
 type WhipSession = { pc: any; videoSender: any; audioSender: any }
 type WhipStatus = { state: 'idle' | 'connecting' | 'connected' | 'failed'; error?: string }
 
-function BroadcasterWhipManager({ matches, onStatusChange }: { matches: MatchState[]; onStatusChange: (matchId: string, status: WhipStatus) => void }) {
-  const allTracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
+function BroadcasterWhipManager({ matches, cameraTrackRefs, onStatusChange }: { matches: MatchState[]; cameraTrackRefs: any[]; onStatusChange: (matchId: string, status: WhipStatus) => void }) {
+  const allTracks = useTracks([Track.Source.Microphone])
   const sessionsRef = useRef<Map<string, WhipSession>>(new Map())
+  const [sessionCount, setSessionCount] = useState(0)
 
   const getVideoMST = (capturerIdentities: string[]): any => {
     const primaryId = capturerIdentities[0]
     if (!primaryId) return null
-    const ref = allTracks.find(
-      t => t.participant.identity === primaryId && t.source === Track.Source.Camera,
+    const ref = cameraTrackRefs.find(
+      (t: any) => t.participant.identity === primaryId,
     )
-    return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
+    const track = ref?.publication?.track as any
+    const mst = track?.mediaStreamTrack ?? track?.mediaStream?.getVideoTracks?.()?.[0] ?? null
+    console.log('[WHIP] getVideoMST', primaryId?.slice(-6), 'ref:', !!ref, 'track:', !!track, 'mst:', !!mst, 'trackKeys:', track ? Object.keys(track) : [])
+    return mst
   }
 
   const getAudioMST = (commentatorIdentities: string[], capturerIdentities: string[]): any => {
@@ -1758,15 +1763,18 @@ function BroadcasterWhipManager({ matches, onStatusChange }: { matches: MatchSta
     for (const match of matches) {
       const session = sessionsRef.current.get(match.id)
       if (!session) continue
+      const videoMST = getVideoMST(match.liveCapturerIdentities)
+      const audioMST = getAudioMST(match.liveCommentatorIdentities, match.liveCapturerIdentities)
+      console.log('[WHIP] replaceTrack', match.id.slice(-6), 'video:', videoMST ? 'OK' : 'NULL', 'audio:', audioMST ? 'OK' : 'NULL', 'allTracks count:', allTracks.length)
       try {
-        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentities))
-        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentities, match.liveCapturerIdentities))
+        session.videoSender.replaceTrack(videoMST)
+        session.audioSender.replaceTrack(audioMST)
       } catch (e) {
         console.warn('[WHIP] replaceTrack failed', e)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTracks, assignKey])
+  }, [cameraTrackRefs, allTracks, assignKey, sessionCount])
 
   async function openSession(match: MatchState) {
     onStatusChange(match.id, { state: 'connecting' })
@@ -1813,6 +1821,7 @@ function BroadcasterWhipManager({ matches, onStatusChange }: { matches: MatchSta
       const answerSdp = await res.text()
       await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }))
       sessionsRef.current.set(match.id, { pc, videoSender: videoTx.sender, audioSender: audioTx.sender })
+      setSessionCount(c => c + 1)
       onStatusChange(match.id, { state: 'connected' })
 
       pc.addEventListener('connectionstatechange', () => {

@@ -4,7 +4,7 @@ import { Link, useRouter, type Href } from 'expo-router'
 import { Search, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight } from 'lucide-react-native'
 import * as SecureStore from 'expo-secure-store'
 import { controlPanelLogin } from './services/auth'
-import { getEventById } from './services/event'
+import { getEventById, saveEventHistory, getEventHistory } from './services/event'
 import { listMatches } from './services/match'
 
 type LiveMatch = {
@@ -30,6 +30,14 @@ type EventData = {
   pastMatches: PastMatch[]
 }
 
+type HistoryItem = {
+  eventId: string
+  eventName: string
+  category: string
+  sport: string | null
+  lastViewedAt: string
+}
+
 type RoleKey = 'viewer' | 'control-panel'
 
 type Role = {
@@ -43,23 +51,15 @@ const ROLES: Role[] = [
   { key: 'control-panel', label: 'Control Panel', Icon: ShieldCheck },
 ]
 
-const RECENT_EVENT_IDS_KEY = 'recent-event-ids'
-const MAX_RECENT_EVENT_IDS = 10
+const DEVICE_ID_KEY = 'viewer-device-id'
 
-async function loadRecentEventIds(): Promise<string[]> {
-  try {
-    const raw = await SecureStore.getItemAsync(RECENT_EVENT_IDS_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
+async function getOrCreateDeviceId(): Promise<string> {
+  let id = await SecureStore.getItemAsync(DEVICE_ID_KEY)
+  if (!id) {
+    id = 'device-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+    await SecureStore.setItemAsync(DEVICE_ID_KEY, id)
   }
-}
-
-async function saveRecentEventId(eventId: string): Promise<string[]> {
-  const current = await loadRecentEventIds()
-  const next = [eventId, ...current.filter((id) => id !== eventId)].slice(0, MAX_RECENT_EVENT_IDS)
-  await SecureStore.setItemAsync(RECENT_EVENT_IDS_KEY, JSON.stringify(next))
-  return next
+  return id
 }
 
 async function findEvent(eventId: string): Promise<EventData | null> {
@@ -141,10 +141,17 @@ function ViewerScreen() {
   const [searched, setSearched] = useState(false)
   const [event, setEvent] = useState<EventData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [recentIds, setRecentIds] = useState<string[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [deviceId, setDeviceId] = useState<string | null>(null)
 
   useEffect(() => {
-    loadRecentEventIds().then(setRecentIds)
+    getOrCreateDeviceId().then(async (id) => {
+      setDeviceId(id)
+      try {
+        const h = await getEventHistory(id)
+        setHistory(h)
+      } catch {}
+    })
   }, [])
 
   const handleSearch = async (overrideId?: string) => {
@@ -158,8 +165,11 @@ function ViewerScreen() {
       setEvent(result)
       setSearched(true)
       setEventId(idToSearch)
-      if (result) {
-        setRecentIds(await saveRecentEventId(idToSearch))
+      if (result && deviceId) {
+        saveEventHistory(deviceId, idToSearch).then(async () => {
+          const h = await getEventHistory(deviceId)
+          setHistory(h)
+        }).catch(() => {})
       }
     } catch {
       setError("Couldn't reach the server. Try again.")
@@ -252,18 +262,29 @@ function ViewerScreen() {
           </Pressable>
         </View>
 
-        {!event && recentIds.length > 0 && (
-          <View className="mx-6 mb-2 flex-row flex-wrap gap-2">
-            {recentIds.map((id) => (
-              <Pressable
-                key={id}
-                onPress={() => handleSearch(id)}
-                className="bg-white/[0.06] active:bg-white/15 rounded-full px-3.5 py-2 border border-white/10 flex-row items-center gap-1.5"
-              >
-                <History size={11} color="rgba(255,255,255,0.4)" />
-                <Text className="text-white/60 text-xs font-bold">{id}</Text>
-              </Pressable>
-            ))}
+        {!event && history.length > 0 && (
+          <View className="mx-6 mb-4">
+            <View className="flex-row items-center gap-1.5 mb-3">
+              <History size={13} color="rgba(255,255,255,0.4)" />
+              <Text className="text-white/40 text-xs font-extrabold tracking-[2px] uppercase">History</Text>
+            </View>
+            <View className="gap-2">
+              {history.map((item) => (
+                <Pressable
+                  key={item.eventId}
+                  onPress={() => handleSearch(item.eventId)}
+                  className="bg-white/[0.06] active:bg-white/15 rounded-2xl px-4 py-3 border border-white/10 flex-row items-center justify-between"
+                >
+                  <View className="flex-1">
+                    <Text className="text-white text-sm font-bold" numberOfLines={1}>{item.eventName}</Text>
+                    <Text className="text-white/40 text-xs mt-0.5">{item.eventId}</Text>
+                  </View>
+                  <Text className="text-white/25 text-xs ml-3">
+                    {new Date(item.lastViewedAt).toLocaleDateString()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         )}
 

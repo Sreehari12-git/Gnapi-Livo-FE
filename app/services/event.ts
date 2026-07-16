@@ -56,4 +56,20 @@ export const validateSession = async (
   return response.data;
 };
 
+export const saveEventHistory = async (deviceId: string, eventId: string) => {
+  const response = await api.post('/event/history', { deviceId, eventId });
+  return response.data;
+};
+
+export const getEventHistory = async (deviceId: string) => {
+  const response = await api.get(`/event/history/${deviceId}`);
+  return response.data as Array<{
+    eventId: string;
+    eventName: string;
+    category: string;
+    sport: string | null;
+    lastViewedAt: string;
+  }>;
+};
+
 
