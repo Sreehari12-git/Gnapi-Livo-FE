@@ -14,6 +14,7 @@ export type Match = {
   ytLiveUrl: string | null
   createdAt: string
   updatedAt: string
+  recordings?: { id: string; capturerIdentity: string; egressId: string; recordingUrl: string; }[]
 }
 
 export type FinalScore = {

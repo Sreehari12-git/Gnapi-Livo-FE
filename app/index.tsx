@@ -1,7 +1,7 @@
 import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
 import { useEffect, useState } from 'react'
 import { Link, useRouter, type Href } from 'expo-router'
-import { Search, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight } from 'lucide-react-native'
+import { Search, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight, Play } from 'lucide-react-native'
 import * as SecureStore from 'expo-secure-store'
 import { controlPanelLogin } from './services/auth'
 import { getEventById, saveEventHistory, getEventHistory } from './services/event'
@@ -21,6 +21,7 @@ type PastMatch = {
   teamBName: string
   teamAScore: number
   teamBScore: number
+  recordings?: { id: string; recordingUrl: string }[]
 }
 
 type EventData = {
@@ -79,15 +80,16 @@ async function findEvent(eventId: string): Promise<EventData | null> {
     name: event.name,
     liveMatches: matches
       .filter((m) => m.liveStatus === 'live')
-      .map((m) => ({ id: m.id, sport: m.sport, name: m.name })),
+      .map((m) => ({ id: m.id, sport: m.sport, name: m.name, liveStatus: m.liveStatus })),
     pastMatches: (event.matchHistories ?? []).map((h: any) => ({
-      id: h.id,
+      id: h.matchId ?? h.id,
       sport: h.sport,
       name: h.name,
       teamAName: h.teamAName,
       teamBName: h.teamBName,
       teamAScore: h.teamAScore,
       teamBScore: h.teamBScore,
+      recordings: h.match?.recordings ?? [],
     })),
   }
 }
@@ -394,29 +396,45 @@ function ViewerScreen() {
             </View>
 
             {event.pastMatches.length > 0 ? (
-              <View className="gap-3">
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                contentContainerStyle={{ gap: 12, paddingRight: 24, paddingBottom: 10 }}
+              >
                 {event.pastMatches.map((match) => (
-                  <View key={match.id} className="bg-white/[0.03] rounded-2xl p-4 border border-white/8">
-                    <View className="flex-row items-center justify-between mb-2.5">
-                      <View className="flex-row items-center gap-1.5">
-                        <Trophy size={12} color="rgba(255,255,255,0.3)" />
-                        <Text className="text-white/35 text-[10px] font-black tracking-wide">
-                          FINISHED
+                  <Link
+                    key={match.id}
+                    href={{ pathname: '/viewer/[matchId]', params: { matchId: match.id, eventId: event.id } } as Href}
+                    asChild
+                  >
+                    <Pressable className="bg-white/[0.03] active:bg-white/[0.1] rounded-2xl p-4 border border-white/10 w-64 overflow-hidden relative">
+                      <View className="flex-row items-center justify-between mb-2.5">
+                        <View className="flex-row items-center gap-1.5">
+                          <Trophy size={12} color="rgba(255,255,255,0.3)" />
+                          <Text className="text-white/35 text-[10px] font-black tracking-wide">
+                            {match.recordings && match.recordings.length > 0 ? 'REPLAY' : 'FINISHED'}
+                          </Text>
+                        </View>
+                        <Text className="text-white/35 text-xs font-bold tracking-wide uppercase">
+                          {match.sport}
                         </Text>
                       </View>
-                      <Text className="text-white/35 text-xs font-bold tracking-wide uppercase">
-                        {match.sport}
+                      <Text className="text-white/80 font-bold text-base mb-1" numberOfLines={1}>
+                        {match.name}
                       </Text>
-                    </View>
-                    <Text className="text-white/80 font-bold text-base mb-1">
-                      {match.name}
-                    </Text>
-                    <Text className="text-white/40 text-sm font-semibold">
-                      {match.teamAName} {match.teamAScore} - {match.teamBScore} {match.teamBName}
-                    </Text>
-                  </View>
+                      <Text className="text-white/40 text-sm font-semibold mb-2">
+                        {match.teamAName} {match.teamAScore} - {match.teamBScore} {match.teamBName}
+                      </Text>
+                      
+                      {match.recordings && match.recordings.length > 0 && (
+                        <View className="absolute right-3 bottom-3 w-8 h-8 rounded-full bg-white/10 items-center justify-center">
+                          <Play size={14} color="#ffffff" fill="#ffffff" style={{ marginLeft: 2 }} />
+                        </View>
+                      )}
+                    </Pressable>
+                  </Link>
                 ))}
-              </View>
+              </ScrollView>
             ) : (
               <View className="bg-white/[0.04] rounded-2xl p-6 mb-2 items-center border border-white/5">
                 <Text className="text-white/35 text-sm text-center">

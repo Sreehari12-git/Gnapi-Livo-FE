@@ -106,8 +106,8 @@ interface MatchState {
   sport: Sport
   name: string
   liveStatus: MatchLiveStatus
-  liveCapturerIdentity: string | null
-  liveCommentatorIdentity: string | null
+  liveCapturerIdentities: string[]
+  liveCommentatorIdentities: string[]
   ytWhipUrl: string | null
   ytLiveUrl: string | null
   audioOn: boolean
@@ -154,8 +154,8 @@ export default function BroadcasterDashboard() {
           sport,
           name: sm.name,
           liveStatus: sm.liveStatus as MatchLiveStatus,
-          liveCapturerIdentity: sm.liveCapturerIdentity,
-          liveCommentatorIdentity: sm.liveCommentatorIdentity,
+          liveCapturerIdentities: sm.liveCapturerIdentities ?? [],
+          liveCommentatorIdentities: sm.liveCommentatorIdentities ?? [],
           ytWhipUrl: sm.ytWhipUrl,
           ytLiveUrl: sm.ytLiveUrl,
           audioOn: existing?.audioOn ?? true,
@@ -201,8 +201,8 @@ export default function BroadcasterDashboard() {
           sport: selectedSport,
           name: created.name,
           liveStatus: created.liveStatus as MatchLiveStatus,
-          liveCapturerIdentity: created.liveCapturerIdentity,
-          liveCommentatorIdentity: created.liveCommentatorIdentity,
+          liveCapturerIdentities: created.liveCapturerIdentities ?? [],
+          liveCommentatorIdentities: created.liveCommentatorIdentities ?? [],
           ytWhipUrl: created.ytWhipUrl,
           ytLiveUrl: created.ytLiveUrl,
           audioOn: true,
@@ -328,7 +328,7 @@ export default function BroadcasterDashboard() {
 
   const applyLiveSelection = async (
     id: string,
-    payload: { liveCapturerIdentity?: string | null; liveCommentatorIdentity?: string | null },
+    payload: { liveCapturerIdentities?: string[]; liveCommentatorIdentities?: string[] },
   ) => {
     setAssigningMatchId(id)
     try {
@@ -343,20 +343,20 @@ export default function BroadcasterDashboard() {
 
   const assignCapturerToMatch = (capturerIdentity: string, matchId: string | null) => {
     if (matchId) {
-      applyLiveSelection(matchId, { liveCapturerIdentity: capturerIdentity })
+      applyLiveSelection(matchId, { liveCapturerIdentities: [...(matches.find(m => m.id === matchId)?.liveCapturerIdentities || []), capturerIdentity] })
       return
     }
-    const current = matches.find(m => m.liveCapturerIdentity === capturerIdentity)
-    if (current) applyLiveSelection(current.id, { liveCapturerIdentity: null })
+    const current = matches.find(m => m.liveCapturerIdentities?.includes(capturerIdentity))
+    if (current) applyLiveSelection(current.id, { liveCapturerIdentities: current.liveCapturerIdentities.filter(id => id !== capturerIdentity) })
   }
 
   const assignCommentatorToMatch = (commentatorIdentity: string, matchId: string | null) => {
     if (matchId) {
-      applyLiveSelection(matchId, { liveCommentatorIdentity: commentatorIdentity })
+      applyLiveSelection(matchId, { liveCommentatorIdentities: [...(matches.find(m => m.id === matchId)?.liveCommentatorIdentities || []), commentatorIdentity] })
       return
     }
-    const current = matches.find(m => m.liveCommentatorIdentity === commentatorIdentity)
-    if (current) applyLiveSelection(current.id, { liveCommentatorIdentity: null })
+    const current = matches.find(m => m.liveCommentatorIdentities?.includes(commentatorIdentity))
+    if (current) applyLiveSelection(current.id, { liveCommentatorIdentities: current.liveCommentatorIdentities.filter(id => id !== commentatorIdentity) })
   }
 
   const clearLive = async (id: string) => {
@@ -366,7 +366,7 @@ export default function BroadcasterDashboard() {
       }
       return { ...m, winner: null, racketScore: createRacketScore(m.sport as 'badminton' | 'pickleball') }
     })
-    await applyLiveSelection(id, { liveCapturerIdentity: null, liveCommentatorIdentity: null })
+    await applyLiveSelection(id, { liveCapturerIdentities: [], liveCommentatorIdentities: [] })
   }
 
   const declareWinner = async (id: string, side: Side) => {
@@ -386,8 +386,8 @@ export default function BroadcasterDashboard() {
       updateMatch(id, m => ({
         ...m,
         liveStatus: updated.liveStatus as MatchLiveStatus,
-        liveCapturerIdentity: updated.liveCapturerIdentity,
-        liveCommentatorIdentity: updated.liveCommentatorIdentity,
+        liveCapturerIdentities: updated.liveCapturerIdentities ?? [],
+        liveCommentatorIdentities: updated.liveCommentatorIdentities ?? [],
         ytWhipUrl: updated.ytWhipUrl,
         ytLiveUrl: updated.ytLiveUrl,
       }))
@@ -456,8 +456,8 @@ export default function BroadcasterDashboard() {
 
   const autoSwitch = useCallback(async (matchId: string, capturerIdentity: string) => {
     try {
-      await setMatchLiveSelection(matchId, { liveCapturerIdentity: capturerIdentity })
-      updateMatch(matchId, m => ({ ...m, liveCapturerIdentity: capturerIdentity }))
+      await setMatchLiveSelection(matchId, { liveCapturerIdentities: [...(matches.find(m => m.id === matchId)?.liveCapturerIdentities || []), capturerIdentity] })
+      updateMatch(matchId, m => ({ ...m, liveCapturerIdentities: [...(m.liveCapturerIdentities || []), capturerIdentity] }))
     } catch {}
   }, [])
 
@@ -634,7 +634,7 @@ export default function BroadcasterDashboard() {
                         ? match.winner
                           ? `${match.winner === 'A' ? nameA : nameB} won`
                           : 'ended'
-                        : match.liveCapturerIdentity
+                        : (match.liveCapturerIdentities?.[0] ?? null)
                         ? 'live'
                         : 'no live feed'}
                     </Text>
@@ -670,9 +670,9 @@ export default function BroadcasterDashboard() {
 
                   {/* Live participant counts for this match */}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <MatchStatChip label="Capturer" icon={<Video size={12} color="#2563eb" />} count={match.liveCapturerIdentity ? 1 : 0} color="#2563eb" />
-                    <MatchStatChip label="Commentator" icon={<Mic size={12} color="#7c3aed" />} count={match.liveCommentatorIdentity ? 1 : 0} color="#7c3aed" />
-                    <MatchStatChip label="Viewers" icon={<Eye size={12} color="#059669" />} count={match.liveCapturerIdentity ? roster.viewerCount : 0} color="#059669" />
+                    <MatchStatChip label="Capturer" icon={<Video size={12} color="#2563eb" />} count={(match.liveCapturerIdentities && match.liveCapturerIdentities.length > 0) ? 1 : 0} color="#2563eb" />
+                    <MatchStatChip label="Commentator" icon={<Mic size={12} color="#7c3aed" />} count={(match.liveCommentatorIdentities && match.liveCommentatorIdentities.length > 0) ? 1 : 0} color="#7c3aed" />
+                    <MatchStatChip label="Viewers" icon={<Eye size={12} color="#059669" />} count={(match.liveCapturerIdentities && match.liveCapturerIdentities.length > 0) ? roster.viewerCount : 0} color="#059669" />
                   </View>
 
                   {/* YouTube Live — full-width row so it's always visible on phone screens */}
@@ -752,8 +752,7 @@ export default function BroadcasterDashboard() {
                         <View className="flex-row items-center gap-2">
                           <Video size={14} color="#111" />
                           <Text className="text-black text-sm font-semibold">
-                            {match.liveCapturerIdentity
-                              ? `Camera live: ${roster.capturers.find(p => p.identity === match.liveCapturerIdentity)?.name || match.liveCapturerIdentity}`
+                            {(match.liveCapturerIdentities && match.liveCapturerIdentities.length > 0) ? `Camera live: ${match.liveCapturerIdentities.length}`
                               : 'No capturer assigned'}
                           </Text>
                         </View>
@@ -761,12 +760,12 @@ export default function BroadcasterDashboard() {
                           <View className="flex-row items-center gap-2">
                             <Mic size={14} color="#111" />
                             <Text className="text-black text-sm font-semibold">
-                              {match.liveCommentatorIdentity
-                                ? `Commentary live: ${roster.commentators.find(p => p.identity === match.liveCommentatorIdentity)?.name || match.liveCommentatorIdentity}`
+                              {(match.liveCommentatorIdentities?.[0])
+                                ? `Commentary live: ${roster.commentators.find(p => p.identity === match.liveCommentatorIdentities?.[0])?.name || match.liveCommentatorIdentities?.[0]}`
                                 : 'No commentator assigned'}
                             </Text>
                           </View>
-                          {match.liveCommentatorIdentity && (
+                          {(match.liveCommentatorIdentities?.[0] ?? null) && (
                             <Pressable
                               onPress={() => toggleCommentaryMute(match.id)}
                               className="border border-gray-200 rounded-lg px-3 py-1.5 flex-row items-center gap-1.5"
@@ -890,7 +889,7 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
 
   // Replace tracks whenever the capturer/commentator assignment or the available tracks change
   const assignKey = matches
-    .map(m => `${m.id}:${m.liveCapturerIdentity ?? ''}:${m.liveCommentatorIdentity ?? ''}`)
+    .map(m => `${m.id}:${m.liveCapturerIdentities?.join(",") ?? ""}:${m.liveCommentatorIdentities?.join(",") ?? ""}`)
     .join('|')
 
   useEffect(() => {
@@ -898,8 +897,8 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
       const session = sessionsRef.current.get(match.id)
       if (!session) continue
       try {
-        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentity))
-        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentity, match.liveCapturerIdentity))
+        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentities?.[0] ?? null))
+        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentities?.[0] ?? null, match.liveCapturerIdentities?.[0] ?? null))
       } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -919,8 +918,8 @@ function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
       const audioTx = pc.addTransceiver('audio', { direction: 'sendonly' })
 
       // Wire up tracks if capturer/commentator already assigned when stream starts
-      const videoMST = getVideoMST(match.liveCapturerIdentity)
-      const audioMST = getAudioMST(match.liveCommentatorIdentity, match.liveCapturerIdentity)
+      const videoMST = getVideoMST(match.liveCapturerIdentities?.[0] ?? null)
+      const audioMST = getAudioMST(match.liveCommentatorIdentities?.[0] ?? null, match.liveCapturerIdentities?.[0] ?? null)
       if (videoMST) videoTx.sender.replaceTrack(videoMST)
       if (audioMST) audioTx.sender.replaceTrack(audioMST)
 
@@ -1013,7 +1012,7 @@ function AutoDirector({
         // Only switch if same capturer wins 2 cycles in a row (prevents flickering)
         if (winner === lastWinnerRef.current) {
           for (const match of activeMatches) {
-            if (match.liveCapturerIdentity !== winner) {
+            if (!(match.liveCapturerIdentities?.includes(winner))) {
               onSwitch(match.id, winner)
             }
           }
@@ -1060,7 +1059,7 @@ function StatPill({ label, count, color }: { label: string; count: number; color
   )
 }
 
-function MatchStatChip({ label, icon, count, color }: { label: string; icon: JSX.Element; count: number; color: string }) {
+function MatchStatChip({ label, icon, count, color }: { label: string; icon: React.ReactNode; count: number; color: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
       {icon}
@@ -1124,7 +1123,7 @@ function BroadcasterLobbies({
           <View className="gap-2">
             {capturers.map((p) => {
               const trackRef = cameraTracks.find((t) => t.participant.identity === p.identity)
-              const assignedMatch = matches.find((m) => m.liveCapturerIdentity === p.identity)
+              const assignedMatch = matches.find((m) => m.liveCapturerIdentities?.includes(p.identity))
               return (
                 <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
                   <View className="flex-row items-center gap-3">
@@ -1166,7 +1165,7 @@ function BroadcasterLobbies({
         ) : (
           <View className="gap-2">
             {commentators.map((p) => {
-              const assignedMatch = matches.find((m) => m.liveCommentatorIdentity === p.identity)
+              const assignedMatch = matches.find((m) => m.liveCommentatorIdentities?.includes(p.identity))
               return (
                 <View key={p.identity} className="border border-gray-200 rounded-lg p-3 gap-3">
                   <View className="flex-1">

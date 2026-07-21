@@ -24,7 +24,7 @@ export default function SubscriptionSelect() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [fetchLoading, setFetchLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
-  const [actionLoading, setActionLoading] = useState<string | null>(null) // planId being acted on
+  const [actionLoading, setActionLoading] = useState<number | null>(null) // planId being acted on
   const [actionError, setActionError] = useState('')
 
   const loadPlans = async () => {

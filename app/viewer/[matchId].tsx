@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Radio, LogOut, Mic, AlertTriangle, ChevronLeft } from 'lucide-react-native'
 import { LiveKitRoom, VideoTrack, useDataChannel, useRemoteParticipants, useTracks } from '@livekit/react-native'
 import { Track } from 'livekit-client'
+import { useVideoPlayer, VideoView } from 'expo-video'
 import { fetchLiveKitToken } from '../services/livekit'
 import { getMatch, type Match } from '../services/match'
 
@@ -142,6 +143,51 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
   )
   const isLive = (match?.liveCapturerIdentities?.length ?? 0) > 0
 
+  const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null)
+  
+  useEffect(() => {
+    if (match?.liveStatus === 'ended' && match?.recordings?.length && !selectedRecordingId) {
+      setSelectedRecordingId(match.recordings[0].id)
+    }
+  }, [match?.liveStatus, match?.recordings, selectedRecordingId])
+
+  const selectedRecording = match?.recordings?.find(r => r.id === selectedRecordingId)
+  
+  // Setup video player for replays
+  const videoSource = match?.liveStatus === 'ended' && selectedRecording ? selectedRecording.recordingUrl : null
+  const player = useVideoPlayer(videoSource, player => {
+    player.loop = false
+    // player.play() can be called here if we want auto-play
+  })
+
+  if (match?.liveStatus === 'ended' && match?.recordings && match.recordings.length > 0) {
+    return (
+      <View className="flex-1 bg-black">
+        <VideoView style={{ flex: 1 }} player={player} allowsFullscreen allowsPictureInPicture />
+        <Pressable
+          onPress={onLeave}
+          className="absolute top-14 left-6 z-10 flex-row items-center gap-2 active:opacity-60 bg-black/40 px-3 py-1.5 rounded-full"
+        >
+          <ChevronLeft size={18} color="rgba(255,255,255,0.8)" />
+          <Text className="text-white/80 text-sm font-medium">Back</Text>
+        </Pressable>
+        {match.recordings.length > 1 && (
+          <ScrollView horizontal className="absolute bottom-10 w-full px-6" showsHorizontalScrollIndicator={false}>
+            {match.recordings.map((rec, i) => (
+              <Pressable
+                key={rec.id}
+                onPress={() => setSelectedRecordingId(rec.id)}
+                className={`mr-3 px-4 py-2 rounded-full border ${selectedRecordingId === rec.id ? 'bg-emerald-500 border-emerald-400' : 'bg-black/60 border-white/20'}`}
+              >
+                <Text className="text-white font-bold text-sm">Camera {i + 1}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    )
+  }
+
   if (!isLive) {
     return (
       <View className="flex-1 bg-black">
@@ -156,7 +202,7 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
 
         {/* Centered waiting / usage-exceeded indicator */}
         <View className="flex-1 items-center justify-center gap-5 px-8">
-          {usageExceeded ? (
+          {usageExceeded || match?.liveStatus === 'ended' ? (
             <>
               <View className="w-16 h-16 rounded-full bg-red-500/20 items-center justify-center">
                 <AlertTriangle size={28} color="#f87171" />
@@ -164,7 +210,9 @@ function ViewerLiveView({ matchId, onLeave }: { matchId: string; onLeave: () => 
               <View className="items-center gap-2">
                 <Text className="text-white/80 text-base font-bold text-center">Stream ended</Text>
                 <Text className="text-white/40 text-sm text-center">
-                  The organiser's streaming limit has been reached. The stream has been stopped.
+                  {usageExceeded 
+                    ? "The organiser's streaming limit has been reached."
+                    : "This match has finished. The recording is not available."}
                 </Text>
               </View>
             </>
