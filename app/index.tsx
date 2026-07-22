@@ -174,7 +174,7 @@ function ViewerScreen() {
         }).catch(() => {})
       }
     } catch {
-      setError("Couldn't reach the server. Try again.")
+      setError("Couldn&apos;t reach the server. Try again.")
     } finally {
       setSearching(false)
     }
@@ -306,7 +306,7 @@ function ViewerScreen() {
               No event found
             </Text>
             <Text className="text-white/40 text-sm text-center leading-relaxed px-2">
-              Nothing matches ID "{eventId.trim()}". Double-check it and try again.
+              Nothing matches ID &quot;{eventId.trim()}&quot;. Double-check it and try again.
             </Text>
           </View>
         )}
@@ -582,7 +582,7 @@ function ControlPanelScreen() {
 
 <View className="flex-row items-center justify-center gap-1.5 mt-8">
   <Text className="text-white/35 text-sm">
-    Don't have an account?
+    Don&apos;t have an account?
   </Text>
   <Pressable onPress={() => router.push('/adminRegister')}>
     <Text className="text-orange-400 text-sm font-bold">

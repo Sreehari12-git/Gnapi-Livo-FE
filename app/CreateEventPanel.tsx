@@ -188,7 +188,7 @@ export default function CreateEventPanel() {
         <Eyebrow label="Event Setup" />
         <Text className="text-white text-5xl font-black mb-2">Create Event</Text>
         <Text className="text-white/40 text-base mb-6">
-          Set up a new live event. The broadcaster will use this event's ID to join.
+          Set up a new live event. The broadcaster will use this event&apos;s ID to join.
         </Text>
 
         <View className="h-px bg-white/5 mb-8" />
@@ -229,7 +229,7 @@ export default function CreateEventPanel() {
               onChange={setSelectedSport}
             />
             <Text className="text-white/25 text-xs mt-2">
-              The broadcaster won't need to choose a sport — this is locked to the event.
+              The broadcaster won&apos;t need to choose a sport — this is locked to the event.
             </Text>
           </View>
         )}

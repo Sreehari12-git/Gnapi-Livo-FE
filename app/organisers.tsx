@@ -1467,32 +1467,46 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                       </Pressable>
                     )}
 
-                    {!isEnded && match.liveCapturerIdentities.length > 0 && (
-                      <View>
-                        <Pressable
-                          onPress={() => toggleAiDirection(match.id)}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 8,
-                            borderRadius: 12,
-                            paddingHorizontal: 16,
-                            paddingVertical: 12,
-                            backgroundColor: aiEnabledMap[match.id] ? '#7c3aed' : '#f3f4f6',
-                          }}
-                        >
-                          <Cpu size={14} color={aiEnabledMap[match.id] ? '#fff' : '#6b7280'} />
-                          <Text style={{ color: aiEnabledMap[match.id] ? '#fff' : '#6b7280', fontSize: 13, fontWeight: '700' }}>
-                            {aiEnabledMap[match.id] ? '● AI Direction: ON' : 'AI Direction: OFF'}
-                          </Text>
-                        </Pressable>
-                        {aiEnabledMap[match.id] && aiStatusMap[match.id] ? (
-                          <Text style={{ color: '#7c3aed', fontSize: 11, marginTop: 4, textAlign: 'center' }}>
-                            {aiStatusMap[match.id]}
-                          </Text>
-                        ) : null}
-                      </View>
+                    {!isEnded && (
+                      <>
+                        <View style={{ padding: 12, borderRadius: 12, backgroundColor: '#f3e8ff', borderColor: '#e9d5ff', borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <View style={{ backgroundColor: '#e9d5ff', padding: 8, borderRadius: 8 }}>
+                            <Video size={16} color="#7c3aed" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: '#581c87', fontWeight: '600', fontSize: 12 }}>AI Auto Director</Text>
+                            <Text style={{ color: '#7e22ce', fontSize: 10, marginTop: 2 }}>Automatic multi-camera switching is coming soon!</Text>
+                          </View>
+                        </View>
+                        
+                        {/* Original AI Direction logic (commented out per user request)
+                        <View>
+                          <Pressable
+                            onPress={() => toggleAiDirection(match.id)}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                              borderRadius: 12,
+                              paddingHorizontal: 16,
+                              paddingVertical: 12,
+                              backgroundColor: aiEnabledMap[match.id] ? '#7c3aed' : '#f3f4f6',
+                            }}
+                          >
+                            <Cpu size={14} color={aiEnabledMap[match.id] ? '#fff' : '#6b7280'} />
+                            <Text style={{ color: aiEnabledMap[match.id] ? '#fff' : '#6b7280', fontSize: 13, fontWeight: '700' }}>
+                              {aiEnabledMap[match.id] ? '● AI Direction: ON' : 'AI Direction: OFF'}
+                            </Text>
+                          </Pressable>
+                          {aiEnabledMap[match.id] && aiStatusMap[match.id] ? (
+                            <Text style={{ color: '#7c3aed', fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                              {aiStatusMap[match.id]}
+                            </Text>
+                          ) : null}
+                        </View>
+                        */}
+                      </>
                     )}
 
                     {!isEnded && (
@@ -2426,7 +2440,7 @@ function FootballScoreboard({
         <View>
           <Text className="text-black font-semibold text-base">Scoreboard</Text>
           <Text className="text-gray-400 text-xs mt-0.5">
-            {STATUS_LABEL[score.status]} · {score.minute}'
+            {STATUS_LABEL[score.status]} · {score.minute}&apos;
           </Text>
         </View>
         <View className="flex-row flex-wrap items-center gap-2">

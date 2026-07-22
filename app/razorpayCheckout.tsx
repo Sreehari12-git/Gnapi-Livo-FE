@@ -159,7 +159,7 @@ export default function RazorpayCheckout() {
     return (
       <View className="flex-1 bg-[#0A0E16] items-center justify-center px-8 gap-4">
         <AlertTriangle size={32} color="#f97316" />
-        <Text className="text-white text-lg font-black text-center">Couldn't load payment</Text>
+        <Text className="text-white text-lg font-black text-center">Couldn&apos;t load payment</Text>
         <Text className="text-white/40 text-sm text-center">Check your internet connection and try again.</Text>
         <View className="flex-row gap-3 mt-2">
           <Pressable

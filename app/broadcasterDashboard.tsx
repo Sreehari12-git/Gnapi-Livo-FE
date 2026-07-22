@@ -454,12 +454,12 @@ export default function BroadcasterDashboard() {
     }
   }
 
-  const autoSwitch = useCallback(async (matchId: string, capturerIdentity: string) => {
+  const autoSwitch = async (matchId: string, capturerIdentity: string) => {
     try {
       await setMatchLiveSelection(matchId, { liveCapturerIdentities: [...(matches.find(m => m.id === matchId)?.liveCapturerIdentities || []), capturerIdentity] })
       updateMatch(matchId, m => ({ ...m, liveCapturerIdentities: [...(m.liveCapturerIdentities || []), capturerIdentity] }))
     } catch {}
-  }, [])
+  }
 
   const getNames = (match: MatchState): { nameA: string; nameB: string } => {
     if (match.sport === 'football' && match.footballScore) {
@@ -476,7 +476,7 @@ export default function BroadcasterDashboard() {
       <View className="px-6 mt-8">
         <Text className="text-black text-3xl font-bold">Broadcaster</Text>
         <Text className="text-gray-500 text-sm mt-1">
-          Group capturers into matches, pick which feed goes live per match, and control each match's scoreboard.
+          Group capturers into matches, pick which feed goes live per match, and control each match&apos;s scoreboard.
         </Text>
       </View>
 
@@ -599,10 +599,10 @@ export default function BroadcasterDashboard() {
             onAssignCommentator={assignCommentatorToMatch}
             onRosterChange={(capturers, commentators, viewerCount) => setRoster({ capturers, commentators, viewerCount })}
           />
-          {/* Manages one WHIP → YouTube connection per match that has ytWhipUrl set */}
-          <BroadcasterWhipManager matches={matches} />
-          {/* Auto-switches live capturer based on ball detection */}
+
+          {/* Auto-switches live capturer based on ball detection
           <AutoDirector matches={matches} onSwitch={autoSwitch} />
+          */}
         </LiveKitRoom>
       )}
 
@@ -668,6 +668,16 @@ export default function BroadcasterDashboard() {
                     </View>
                   </View>
 
+                  <View style={{ padding: 12, borderRadius: 12, backgroundColor: '#f3e8ff', borderColor: '#e9d5ff', borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={{ backgroundColor: '#e9d5ff', padding: 8, borderRadius: 8 }}>
+                      <Video size={16} color="#7c3aed" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#581c87', fontWeight: '600', fontSize: 12 }}>AI Auto Director</Text>
+                      <Text style={{ color: '#7e22ce', fontSize: 10, marginTop: 2 }}>Automatic multi-camera switching is coming soon!</Text>
+                    </View>
+                  </View>
+
                   {/* Live participant counts for this match */}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <MatchStatChip label="Capturer" icon={<Video size={12} color="#2563eb" />} count={(match.liveCapturerIdentities && match.liveCapturerIdentities.length > 0) ? 1 : 0} color="#2563eb" />
@@ -675,7 +685,7 @@ export default function BroadcasterDashboard() {
                     <MatchStatChip label="Viewers" icon={<Eye size={12} color="#059669" />} count={(match.liveCapturerIdentities && match.liveCapturerIdentities.length > 0) ? roster.viewerCount : 0} color="#059669" />
                   </View>
 
-                  {/* YouTube Live — full-width row so it's always visible on phone screens */}
+                  {/* YouTube Live — full-width row so it&apos;s always visible on phone screens */}
                   {!isEnded && (
                     <Pressable
                       onPress={() =>
@@ -825,137 +835,7 @@ export default function BroadcasterDashboard() {
   )
 }
 
-type WhipSession = {
-  pc: any
-  videoSender: any
-  audioSender: any
-}
 
-/**
- * Invisible component (renders null) that lives inside LiveKitRoom.
- * For every match that has ytWhipUrl set, it opens one WebRTC WHIP connection
- * to YouTube and forwards the capturer's video + commentator's (or capturer's) audio.
- * Uses replaceTrack() when the assigned capturer/commentator changes.
- * Closes the connection when ytWhipUrl is cleared (match ended or YT stopped).
- */
-function BroadcasterWhipManager({ matches }: { matches: MatchState[] }) {
-  const allTracks = useTracks([Track.Source.Camera, Track.Source.Microphone])
-  const sessionsRef = useRef<Map<string, WhipSession>>(new Map())
-
-  const getVideoMST = (capturerIdentity: string | null): any => {
-    if (!capturerIdentity) return null
-    const ref = allTracks.find(
-      t => t.participant.identity === capturerIdentity && t.source === Track.Source.Camera,
-    )
-    return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
-  }
-
-  const getAudioMST = (commentatorIdentity: string | null, capturerIdentity: string | null): any => {
-    const identity = commentatorIdentity || capturerIdentity
-    if (!identity) return null
-    const ref = allTracks.find(
-      t => t.participant.identity === identity && t.source === Track.Source.Microphone,
-    )
-    return (ref?.publication?.track as any)?.mediaStreamTrack ?? null
-  }
-
-  // Derived key — changes when any match gains/loses a ytWhipUrl
-  const ytKey = matches.map(m => `${m.id}=${m.ytWhipUrl ?? ''}`).join('|')
-
-  // Open / close WHIP sessions as ytWhipUrl appears or disappears per match
-  useEffect(() => {
-    const desired = new Map(
-      matches
-        .filter(m => m.ytWhipUrl && m.liveStatus !== 'ended')
-        .map(m => [m.id, m]),
-    )
-
-    // Close sessions that are no longer needed
-    for (const [id, session] of sessionsRef.current.entries()) {
-      if (!desired.has(id)) {
-        try { session.pc.close() } catch {}
-        sessionsRef.current.delete(id)
-      }
-    }
-
-    // Open sessions for newly active matches
-    for (const [id, match] of desired.entries()) {
-      if (!sessionsRef.current.has(id)) {
-        void openSession(match)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytKey])
-
-  // Replace tracks whenever the capturer/commentator assignment or the available tracks change
-  const assignKey = matches
-    .map(m => `${m.id}:${m.liveCapturerIdentities?.join(",") ?? ""}:${m.liveCommentatorIdentities?.join(",") ?? ""}`)
-    .join('|')
-
-  useEffect(() => {
-    for (const match of matches) {
-      const session = sessionsRef.current.get(match.id)
-      if (!session) continue
-      try {
-        session.videoSender.replaceTrack(getVideoMST(match.liveCapturerIdentities?.[0] ?? null))
-        session.audioSender.replaceTrack(getAudioMST(match.liveCommentatorIdentities?.[0] ?? null, match.liveCapturerIdentities?.[0] ?? null))
-      } catch {}
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTracks, assignKey])
-
-  async function openSession(match: MatchState) {
-    try {
-      const RTCPeerConnection = (globalThis as any).RTCPeerConnection
-      const RTCSessionDescription = (globalThis as any).RTCSessionDescription
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      })
-
-      // sendonly transceivers — no track initially = black screen / silent audio
-      const videoTx = pc.addTransceiver('video', { direction: 'sendonly' })
-      const audioTx = pc.addTransceiver('audio', { direction: 'sendonly' })
-
-      // Wire up tracks if capturer/commentator already assigned when stream starts
-      const videoMST = getVideoMST(match.liveCapturerIdentities?.[0] ?? null)
-      const audioMST = getAudioMST(match.liveCommentatorIdentities?.[0] ?? null, match.liveCapturerIdentities?.[0] ?? null)
-      if (videoMST) videoTx.sender.replaceTrack(videoMST)
-      if (audioMST) audioTx.sender.replaceTrack(audioMST)
-
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-
-      // WHIP handshake: POST SDP offer, receive SDP answer from YouTube
-      const res = await fetch(match.ytWhipUrl!, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/sdp' },
-        body: offer.sdp,
-      })
-      if (!res.ok) throw new Error(`WHIP ${res.status}`)
-      const answerSdp = await res.text()
-      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }))
-
-      sessionsRef.current.set(match.id, {
-        pc,
-        videoSender: videoTx.sender,
-        audioSender: audioTx.sender,
-      })
-    } catch (err) {
-      // Session will be retried next time ytKey changes (e.g. user clicks YT button again)
-    }
-  }
-
-  // Cleanup all connections when broadcaster disconnects
-  useEffect(() => () => {
-    for (const s of sessionsRef.current.values()) {
-      try { s.pc.close() } catch {}
-    }
-    sessionsRef.current.clear()
-  }, [])
-
-  return null
-}
 
 function AutoDirector({
   matches,
@@ -1410,7 +1290,7 @@ function FootballScoreboard({
         <View>
           <Text className="text-black font-semibold text-base">Scoreboard</Text>
           <Text className="text-gray-400 text-xs mt-0.5">
-            {CLOCK_STATUS_LABEL[score.status]} · {score.minute}'
+            {CLOCK_STATUS_LABEL[score.status]} · {score.minute}&apos;
           </Text>
         </View>
         <View className="flex-row flex-wrap items-center gap-2">

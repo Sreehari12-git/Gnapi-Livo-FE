@@ -72,7 +72,7 @@ export default function EventIdGate({
           <Text className="text-white text-lg font-black mb-1">Enter event ID</Text>
           <Text className="text-white/40 text-xs mb-6 leading-relaxed">
             This links your session to the correct live event. Ask your director
-            or organiser if you don't have it.
+            or organiser if you don&apos;t have it.
           </Text>
 
           {error !== '' && (
