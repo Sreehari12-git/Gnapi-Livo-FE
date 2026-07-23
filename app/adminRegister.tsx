@@ -31,7 +31,10 @@ const handleContinue = async () => {
 
   try {
     const data = await adminRegister(email, password);
-    await SecureStore.setItemAsync("adminId", data.user.id.toString());    
+    await SecureStore.setItemAsync("adminId", data.user.id.toString());
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
     router.push("/subscriptionSelect");
   } catch (err: any) {
     if (err.response) {

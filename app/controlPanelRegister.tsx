@@ -51,7 +51,14 @@ export default function ControlPanelRegister() {
       }
       const data = await controlPanelRegister(name,email,password, Number(adminId));
       console.log(data);
-      router.push('/organisers')
+      setName('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      router.dismissTo('/')
+      setTimeout(() => {
+        router.push('/organisers')
+      }, 0)
     } catch {
       setError('Something went wrong. Try again.')
     } finally {
