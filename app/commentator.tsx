@@ -57,12 +57,12 @@ export default function Commentator() {
 
   return (
     <ScrollView
-      className="flex-1 bg-slate-950"
+      className="flex-1 bg-dark-bg"
       contentContainerStyle={{ paddingBottom: 48 }}
       showsVerticalScrollIndicator={false}
     >
 
-      <View className="bg-emerald-900 px-6 pt-14 pb-6">
+      <View className="bg-dark-surface border-b border-dark-border px-6 pt-14 pb-6 shadow-sm">
         <Pressable
           onPress={() => router.back()}
           className="flex-row items-center gap-2 mb-6"
@@ -82,23 +82,23 @@ export default function Commentator() {
         </Text>
       </View>
 
-      <View className="bg-yellow-400 px-6 py-2 flex-row justify-between items-center">
-        <View className="flex-row items-center gap-1.5">
-          <Mic size={12} color="#022c22" strokeWidth={2.75} />
-          <Text className="text-emerald-950 font-black text-xs tracking-wider">COMMENTARY BOOTH</Text>
+      <View className="mx-6 mt-6 bg-dark-surface border border-white/5 rounded-2xl px-5 py-4 flex-row justify-between items-center shadow-md">
+        <View className="flex-row items-center gap-2">
+          <Mic size={14} color="#FF5722" strokeWidth={2.75} />
+          <Text className="text-white font-black text-xs tracking-[2px]">COMMENTARY BOOTH</Text>
         </View>
-        <View className="flex-row items-center gap-1">
-          <View className={`w-2 h-2 rounded-full ${connection ? 'bg-red-600' : 'bg-slate-600'}`} />
-          <Text className="text-emerald-950 font-black text-xs">
+        <View className="flex-row items-center gap-1.5">
+          <View className={`w-2.5 h-2.5 rounded-full ${connection ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-white/20'}`} />
+          <Text className="text-white/60 font-bold text-xs tracking-wide">
             {connection ? 'ON AIR' : 'IDLE'}
           </Text>
         </View>
       </View>
 
-      <View className="px-6 mt-4">
-        <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-white/10 self-start">
+      <View className="px-6 mt-6">
+        <View className="flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-dark-surface border border-white/10 self-start shadow-sm">
           <Text className="text-white/40 text-xs">Event</Text>
-          <Text className="text-white/70 text-xs font-bold">{eventId}</Text>
+          <Text className="text-primary text-xs font-black">{eventId}</Text>
         </View>
       </View>
 
@@ -118,7 +118,7 @@ export default function Commentator() {
               <TextInput
                 value={identity}
                 onChangeText={setIdentity}
-                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                className="bg-dark-surface text-white rounded-xl px-4 py-3.5 border border-white/5 focus:border-primary/50 text-sm shadow-sm"
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 placeholder="comm-identity"
               />
@@ -128,7 +128,7 @@ export default function Commentator() {
               <TextInput
                 value={displayName}
                 onChangeText={setDisplayName}
-                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                className="bg-dark-surface text-white rounded-xl px-4 py-3.5 border border-white/5 focus:border-primary/50 text-sm shadow-sm"
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 placeholder="Your name"
               />
@@ -138,7 +138,7 @@ export default function Commentator() {
               <TextInput
                 value={room}
                 onChangeText={setRoom}
-                className="bg-slate-800 text-white rounded-xl px-4 py-3 border border-white/10 text-sm"
+                className="bg-dark-surface text-white rounded-xl px-4 py-3.5 border border-white/5 focus:border-primary/50 text-sm shadow-sm"
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 placeholder="room-name"
               />
@@ -150,14 +150,14 @@ export default function Commentator() {
           <Pressable
             disabled={connecting}
             onPress={connection ? stopLive : goLive}
-            className={`flex-row items-center gap-2 px-6 py-3 rounded-xl ${connection ? 'bg-red-500 active:bg-red-600' : 'bg-white active:bg-white/80'} ${connecting ? 'opacity-60' : ''}`}
+            className={`flex-row items-center justify-center gap-2 px-6 py-4 rounded-xl flex-1 ${connection ? 'bg-red-500 active:bg-red-600' : 'bg-primary active:bg-primary-dark'} ${connecting ? 'opacity-60' : 'shadow-md'} transition-transform active:scale-[0.98]`}
           >
             {connection ? (
               <Square size={14} color="#ffffff" fill="#ffffff" />
             ) : (
-              <Circle size={14} color="#dc2626" fill="#dc2626" />
+              <Circle size={14} color="#0F172A" fill="#0F172A" />
             )}
-            <Text className={`font-black text-sm ${connection ? 'text-white' : 'text-slate-900'}`}>
+            <Text className={`font-black text-sm tracking-wide ${connection ? 'text-white' : 'text-[#0F172A]'}`}>
               {connecting ? 'Connecting…' : connection ? 'Stop' : 'Go Live'}
             </Text>
           </Pressable>
@@ -207,7 +207,7 @@ function CommentatorLiveView({ room, displayName }: { room: string; displayName:
           className={`flex-row items-center gap-2 px-5 py-3 rounded-xl border ${
             isMuted
               ? 'bg-orange-500/20 border-orange-500/50 active:bg-orange-500/30'
-              : 'bg-slate-800 border-white/15 active:bg-slate-700'
+              : 'bg-dark-surface border-white/10 active:bg-white/5'
           }`}
         >
           {isMuted ? (
@@ -220,13 +220,13 @@ function CommentatorLiveView({ room, displayName }: { room: string; displayName:
           </Text>
         </Pressable>
 
-        <View className="flex-row items-center gap-2 px-3 py-2 rounded-full bg-slate-800 border border-white/10">
-          <View className={`w-2 h-2 rounded-full ${isMuted ? 'bg-orange-400' : 'bg-red-500'}`} />
+        <View className="flex-row items-center gap-2 px-4 py-2.5 rounded-full bg-dark-surface border border-white/5">
+          <View className={`w-2 h-2 rounded-full ${isMuted ? 'bg-orange-400' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'}`} />
           <Text className="text-white/40 text-xs">{isMuted ? 'muted' : 'on air'}</Text>
         </View>
       </View>
 
-      <View className="bg-slate-800/80 rounded-2xl p-5 border border-white/10">
+      <View className="bg-dark-surface rounded-2xl p-5 border border-white/5 shadow-sm">
         <View className="flex-row justify-between items-center mb-3">
           <Text className="text-white/60 text-sm font-semibold">Mic level</Text>
           {isMuted ? (
@@ -254,11 +254,11 @@ function CommentatorLiveView({ room, displayName }: { room: string; displayName:
       </View>
 
       <View className="flex-row gap-3">
-        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+        <View className="flex-1 bg-dark-surface rounded-2xl p-5 border border-white/5 shadow-sm">
           <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Room</Text>
           <Text className="text-white font-bold text-sm">{room || '—'}</Text>
         </View>
-        <View className="flex-1 bg-slate-800/80 rounded-2xl p-4 border border-white/10">
+        <View className="flex-1 bg-dark-surface rounded-2xl p-5 border border-white/5 shadow-sm">
           <Text className="text-white/40 text-xs uppercase tracking-wider mb-1">Name</Text>
           <Text className="text-white font-bold text-sm">{displayName || '—'}</Text>
         </View>

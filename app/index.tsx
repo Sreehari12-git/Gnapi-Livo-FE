@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useRouter, type Href } from 'expo-router'
 import { Search, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight, Play } from 'lucide-react-native'
 import * as SecureStore from 'expo-secure-store'
+import * as Haptics from 'expo-haptics'
 import { controlPanelLogin } from './services/auth'
 import { getEventById, saveEventHistory, getEventHistory } from './services/event'
 import { listMatches } from './services/match'
@@ -98,11 +99,11 @@ export default function Home() {
   const [activeRole, setActiveRole] = useState<RoleKey>('viewer')
 
   return (
-    <View className="flex-1 bg-[#0A0E16]">
+    <View className="flex-1 bg-dark-bg">
       {activeRole === 'viewer' ? <ViewerScreen /> : <ControlPanelScreen />}
 
       {/* Tab bar - switches local state, no navigation */}
-      <View className="absolute bottom-0 left-0 right-0 bg-[#0D1220] border-t border-white/10 px-3 pt-2.5 pb-7">
+      <View className="absolute bottom-0 left-0 right-0 bg-dark-surface/95 border-t border-dark-border px-3 pt-2.5 pb-3 rounded-t-3xl shadow-lg">
         <View className="flex-row items-center justify-center gap-10">
           {ROLES.map((role) => {
             const isActive = role.key === activeRole
@@ -110,20 +111,23 @@ export default function Home() {
             return (
               <Pressable
                 key={role.key}
-                onPress={() => setActiveRole(role.key)}
-                className="items-center py-1.5 active:opacity-60"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  setActiveRole(role.key)
+                }}
+                className="items-center py-1.5 active:opacity-60 active:scale-95 transition-transform"
                 style={{ width: 96 }}
               >
                 <View
                   className={`w-10 h-10 rounded-xl items-center justify-center mb-1 ${
-                    isActive ? 'bg-orange-500' : 'bg-transparent'
+                    isActive ? 'bg-primary' : 'bg-transparent'
                   }`}
                 >
-                  <Icon size={18} color={isActive ? '#0A0E16' : 'rgba(255,255,255,0.4)'} />
+                  <Icon size={18} color={isActive ? '#0F172A' : 'rgba(255,255,255,0.4)'} />
                 </View>
                 <Text
                   className={`text-[10px] font-bold tracking-wide ${
-                    isActive ? 'text-orange-400' : 'text-white/35'
+                    isActive ? 'text-primary' : 'text-white/35'
                   }`}
                 >
                   {role.label}
@@ -157,6 +161,7 @@ function ViewerScreen() {
   }, [])
 
   const handleSearch = async (overrideId?: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     const idToSearch = (overrideId ?? eventId).trim()
     if (!idToSearch) return
     setSearching(true)
@@ -181,6 +186,7 @@ function ViewerScreen() {
   }
 
   const handleReset = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     setEventId('')
     setEvent(null)
     setSearched(false)
@@ -207,8 +213,8 @@ function ViewerScreen() {
         {/* Header */}
         <View className="px-6 pt-6 pb-5">
           <View className="flex-row items-center gap-2 mb-2">
-            <View className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-            <Text className="text-orange-500 text-xs font-extrabold tracking-[3px] uppercase">
+            <View className="w-1.5 h-1.5 rounded-full bg-primary" />
+            <Text className="text-primary text-xs font-extrabold tracking-[3px] uppercase">
               Live Coverage
             </Text>
           </View>
@@ -222,7 +228,7 @@ function ViewerScreen() {
 
         {/* Search bar */}
         <View className="mx-6 mb-2 flex-row gap-2.5">
-          <View className="flex-1 bg-white/[0.06] rounded-2xl border border-white/10 px-4 flex-row items-center">
+          <View className="flex-1 bg-dark-surface rounded-2xl border border-dark-border px-4 flex-row items-center">
             <Search size={16} color="rgba(255,255,255,0.3)" />
             <TextInput
               value={eventId}
@@ -254,12 +260,12 @@ function ViewerScreen() {
           <Pressable
             onPress={() => handleSearch()}
             disabled={!eventId.trim() || searching}
-            className="bg-orange-500 active:bg-orange-600 rounded-2xl w-14 items-center justify-center disabled:opacity-30"
+            className="bg-primary active:bg-primary-dark active:scale-95 transition-transform rounded-2xl w-14 items-center justify-center disabled:opacity-30"
           >
             {searching ? (
-              <ActivityIndicator color="#0A0E16" />
+              <ActivityIndicator color="#0F172A" />
             ) : (
-              <Search size={20} color="#0A0E16" />
+              <Search size={20} color="#0F172A" />
             )}
           </Pressable>
         </View>
@@ -463,6 +469,7 @@ function ControlPanelScreen() {
   }
 
   const handleSubmit = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     const validationError = validate()
     if (validationError) {
       setError(validationError)
@@ -473,6 +480,8 @@ function ControlPanelScreen() {
     try {
       const data = await controlPanelLogin(email,password);
       await SecureStore.setItemAsync("adminId", data.user.adminId.toString());
+      setEmail('');
+      setPassword('');
       router.push('/organisers')
     }  catch (error: any) {
         if (error.response) {
@@ -497,12 +506,12 @@ function ControlPanelScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View className="px-6 pt-16 pb-10 items-center">
-          <View className="w-16 h-16 rounded-2xl bg-orange-500/15 border-2 border-orange-500 items-center justify-center mb-5">
-            <ShieldCheck size={28} color="#f97316" />
+          <View className="w-16 h-16 rounded-2xl bg-primary/15 border-2 border-primary items-center justify-center mb-5">
+            <ShieldCheck size={28} color="#FF5722" />
           </View>
           <View className="flex-row items-center gap-2 mb-2">
-            <View className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-            <Text className="text-orange-500 text-xs font-extrabold tracking-[3px] uppercase">
+            <View className="w-1.5 h-1.5 rounded-full bg-primary" />
+            <Text className="text-primary text-xs font-extrabold tracking-[3px] uppercase">
               Control Panel
             </Text>
           </View>
@@ -515,7 +524,7 @@ function ControlPanelScreen() {
         </View>
 
         <View className="mx-6 gap-3.5">
-          <View className="bg-white/[0.06] rounded-2xl border border-white/10 px-4 flex-row items-center">
+          <View className="bg-dark-surface rounded-2xl border border-dark-border px-4 flex-row items-center">
             <Mail size={16} color="rgba(255,255,255,0.3)" />
             <TextInput
               value={email}
@@ -529,7 +538,7 @@ function ControlPanelScreen() {
             />
           </View>
 
-          <View className="bg-white/[0.06] rounded-2xl border border-white/10 px-4 flex-row items-center">
+          <View className="bg-dark-surface rounded-2xl border border-dark-border px-4 flex-row items-center">
             <Lock size={16} color="rgba(255,255,255,0.3)" />
             <TextInput
               value={password}
@@ -550,11 +559,11 @@ function ControlPanelScreen() {
             </Pressable>
           </View>
 
-          <Pressable className="self-end" hitSlop={8}>
-            <Text className="text-orange-400 text-xs font-bold">
+          {/* <Pressable className="self-end" hitSlop={8}>
+            <Text className="text-primary text-xs font-bold">
               Forgot password?
             </Text>
-          </Pressable>
+          </Pressable> */}
 
           {error && (
             <Text className="text-red-400 text-xs font-medium">
@@ -565,16 +574,16 @@ function ControlPanelScreen() {
           <Pressable
             onPress={handleSubmit}
             disabled={loading}
-            className="bg-orange-500 active:bg-orange-600 rounded-2xl py-4 flex-row items-center justify-center gap-2 mt-1 disabled:opacity-50"
+            className="bg-primary active:bg-primary-dark active:scale-95 transition-transform rounded-2xl py-4 flex-row items-center justify-center gap-2 mt-1 disabled:opacity-50"
           >
             {loading ? (
-              <ActivityIndicator color="#0A0E16" />
+              <ActivityIndicator color="#0F172A" />
             ) : (
               <>
-                <Text className="text-[#0A0E16] text-base font-black">
+                <Text className="text-[#0F172A] text-base font-black">
                   Sign In
                 </Text>
-                <ArrowRight size={18} color="#0A0E16" />
+                <ArrowRight size={18} color="#0F172A" />
               </>
             )}
           </Pressable>
@@ -585,7 +594,7 @@ function ControlPanelScreen() {
     Don&apos;t have an account?
   </Text>
   <Pressable onPress={() => router.push('/adminRegister')}>
-    <Text className="text-orange-400 text-sm font-bold">
+    <Text className="text-primary text-sm font-bold">
       Sign Up
     </Text>
   </Pressable>

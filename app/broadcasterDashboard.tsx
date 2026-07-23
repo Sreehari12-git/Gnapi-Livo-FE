@@ -180,9 +180,9 @@ export default function BroadcasterDashboard() {
       <EventIdGate
         title="Broadcaster"
         subtitle="Enter the event ID to manage matches and go live."
-        accentIcon={<Radio size={20} color="#60a5fa" />}
-        accentBg="bg-blue-500/20"
-        accentBorder="border-blue-500/40"
+        accentIcon={<Radio size={20} color="#fb923c" />}
+        accentBg="bg-orange-500/20"
+        accentBorder="border-orange-500/40"
         onSubmit={(id) => setEventId(id)}
       />
     )
@@ -472,17 +472,17 @@ export default function BroadcasterDashboard() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-white" contentContainerStyle={{ paddingBottom: 48 }}>
-      <View className="px-6 mt-8">
-        <Text className="text-black text-3xl font-bold">Broadcaster</Text>
-        <Text className="text-gray-500 text-sm mt-1">
+    <ScrollView className="flex-1 bg-dark-bg" contentContainerStyle={{ paddingBottom: 48 }}>
+      <View className="bg-dark-surface border-b border-dark-border px-6 pt-6 pb-6 shadow-sm">
+        <Text className="text-white text-3xl font-bold">Broadcaster</Text>
+        <Text className="text-gray-400 text-sm mt-1">
           Group capturers into matches, pick which feed goes live per match, and control each match&apos;s scoreboard.
         </Text>
       </View>
 
       <View className="px-6 mt-6 flex-row gap-3">
         <View className="flex-1">
-          <Text className="text-gray-500 text-xs mb-1">Identity</Text>
+          <Text className="text-gray-400 text-xs mb-1">Identity</Text>
           <TextInput
             value={identity}
             onChangeText={setIdentity}
@@ -724,7 +724,7 @@ export default function BroadcasterDashboard() {
                   )}
 
                   {!isEnded && (
-                    <View className="border border-blue-100 bg-blue-50/40 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
+                    <View className="border border-orange-100 bg-orange-50/10 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
                       <Text className="text-gray-600 text-xs" style={{ minWidth: 160, flexGrow: 1, flexBasis: 160 }}>
                         When the match is over, declare the winner — the live feed will stop and viewers will see the result.
                       </Text>
@@ -1117,7 +1117,7 @@ function MatchAssignDropdown({
                   onSelect(m.id)
                   setOpen(false)
                 }}
-                className={`px-3 py-2.5 ${m.id === selectedMatchId ? 'bg-blue-50' : ''}`}
+                className={`px-3 py-2.5 ${m.id === selectedMatchId ? 'bg-orange-500/10' : ''}`}
               >
                 <Text className="text-black text-sm">{m.name}</Text>
               </Pressable>

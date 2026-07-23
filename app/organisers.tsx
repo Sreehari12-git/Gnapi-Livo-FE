@@ -85,9 +85,9 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => v
       <EventIdGate
         title="Capturer"
         subtitle="Enter the event ID to connect your camera."
-        accentIcon={<Video size={20} color="#60a5fa" />}
-        accentBg="bg-blue-500/20"
-        accentBorder="border-blue-500/40"
+        accentIcon={<Video size={20} color="#fb923c" />}
+        accentBg="bg-orange-500/20"
+        accentBorder="border-orange-500/40"
         onSubmit={(id) => {
           setEventId(id)
           setRoom(id)
@@ -97,8 +97,8 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => v
   }
 
   return (
-    <View>
-      <View className="bg-emerald-900 px-6 pt-6 pb-6">
+    <View className="flex-1 bg-dark-bg">
+      <View className="bg-dark-surface border-b border-dark-border px-6 pt-6 pb-6 shadow-sm">
         <Pressable
           onPress={() => setEventId(null)}
           className="flex-row items-center gap-1.5 mb-4 self-start active:opacity-60"
@@ -108,8 +108,8 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => v
         </Pressable>
 
         <View className="flex-row items-center gap-3 mb-1">
-          <View className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 items-center justify-center">
-            <Video size={20} color="#60a5fa" />
+          <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
+            <Video size={20} color="#fb923c" />
           </View>
           <Text className="text-white text-3xl font-black">Capturer</Text>
         </View>
@@ -1510,7 +1510,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                     )}
 
                     {!isEnded && (
-                      <View className="border border-blue-100 bg-blue-50/40 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
+                      <View className="border border-orange-100 bg-orange-50/10 rounded-lg px-4 py-3 flex-row flex-wrap items-center gap-3">
                         <Text className="text-gray-600 text-xs" style={{ minWidth: 160, flexGrow: 1, flexBasis: 160 }}>
                           When the match is over, declare the winner — the live feed will stop and viewers will see the result.
                         </Text>
@@ -2267,7 +2267,7 @@ function MatchAssignDropdown({
                   onSelect(m.id)
                   setOpen(false)
                 }}
-                className={`px-3 py-2.5 ${m.id === selectedMatchId ? 'bg-blue-50' : ''}`}
+                className={`px-3 py-2.5 ${m.id === selectedMatchId ? 'bg-orange-500/10' : ''}`}
               >
                 <Text className="text-black text-sm">{m.name}</Text>
               </Pressable>
@@ -2571,7 +2571,9 @@ function AdminPanel() {
     try {
       const data = await adminLogin(email, password);
       await SecureStore.setItemAsync("adminId", data.user.id.toString());
-      router.replace("/adminDashboard");
+      setEmail('');
+      setPassword('');
+      router.push("/adminDashboard");
     } catch (error: any) {
       if (error.response?.data?.message) {
         setError(error.response.data.message);

@@ -120,7 +120,7 @@ function EventCard({
   }
 
   return (
-    <View className="bg-[#111623] rounded-2xl px-5 py-4 border border-white/5 mb-3 flex-row items-center gap-2">
+    <View className="bg-dark-surface rounded-2xl px-5 py-4 border border-white/5 mb-3 flex-row items-center gap-2 shadow-sm transition-transform active:scale-[0.98]">
       {isEditing ? (
         <>
           <TextInput
@@ -129,14 +129,14 @@ function EventCard({
             autoFocus
             editable={!saving}
             placeholderTextColor="rgba(255,255,255,0.25)"
-            className="flex-1 text-white text-base bg-[#0A0E16] rounded-xl px-3 py-2 border border-white/10"
+            className="flex-1 text-white text-base bg-dark-bg rounded-xl px-3 py-2 border border-white/10 focus:border-primary/50"
           />
           <Pressable
             onPress={handleSave}
             disabled={saving}
             className="w-9 h-9 rounded-xl bg-orange-500 items-center justify-center active:opacity-70"
           >
-            <Check size={16} color="#0A0E16" />
+            <Check size={16} color="#0F172A" />
           </Pressable>
           <Pressable
             onPress={() => {
@@ -186,7 +186,10 @@ function SubscriptionTab() {
     setLoading(true)
     try {
       const adminId = await SecureStore.getItemAsync('adminId')
-      if (!adminId) return
+      if (!adminId) {
+        router.replace('/organisers?tab=admin')
+        return
+      }
       const [sub, all, stats] = await Promise.all([
         getCurrentSubscription(Number(adminId)),
         getPlans(),
@@ -254,7 +257,7 @@ function SubscriptionTab() {
       </View>
 
       {current?.plan && (
-        <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-4 mb-3">
+        <View className="bg-dark-surface border border-white/5 rounded-2xl px-5 py-4 mb-3 shadow-sm">
           <View className="flex-row items-center justify-between">
             <View>
               <Text className="text-white/40 text-xs mb-0.5">Current plan</Text>
@@ -273,7 +276,7 @@ function SubscriptionTab() {
       )}
 
       {usageStats && usageStats.limitMinutes > 0 && (
-        <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-4 mb-3">
+        <View className="bg-dark-surface border border-white/5 rounded-2xl px-5 py-4 mb-3 shadow-sm">
           <View className="flex-row items-center gap-2 mb-3">
             <BarChart2 size={14} color="#fb923c" />
             <Text className="text-white font-bold text-sm">Streaming Usage</Text>
@@ -317,7 +320,7 @@ function SubscriptionTab() {
           {upgradePlans.map(plan => {
             const isCurrentPlan = plan.id === current?.plan?.id
             return (
-            <View key={plan.id} className="bg-orange-500/10 border border-orange-500/20 rounded-2xl px-5 py-4 mb-2 flex-row items-center gap-3">
+            <View key={plan.id} className="bg-orange-500/10 border border-orange-500/20 rounded-2xl px-5 py-4 mb-2 flex-row items-center gap-3 shadow-sm transition-transform active:scale-[0.98]">
               <View className="flex-1">
                 <Text className="text-white text-sm font-black">{plan.name}{isCurrentPlan ? ' (current)' : ''}</Text>
                 <Text className="text-orange-400 text-xs mt-0.5">{plan.usageLimitMinutes} min</Text>
@@ -328,11 +331,11 @@ function SubscriptionTab() {
                 className={`bg-orange-500 active:bg-orange-600 rounded-xl px-4 py-2.5 flex-row items-center gap-1.5 ${upgrading !== null ? 'opacity-50' : ''}`}
               >
                 {upgrading === plan.id ? (
-                  <ActivityIndicator size="small" color="#0A0E16" />
+                  <ActivityIndicator size="small" color="#0F172A" />
                 ) : (
                   <>
-                    <ArrowUpCircle size={14} color="#0A0E16" />
-                    <Text className="text-[#0A0E16] text-xs font-black">{isCurrentPlan ? 'Renew' : 'Upgrade'} ₹{plan.amount}</Text>
+                    <ArrowUpCircle size={14} color="#0F172A" />
+                    <Text className="text-[#0F172A] text-xs font-black">{isCurrentPlan ? 'Renew' : 'Upgrade'} ₹{plan.amount}</Text>
                   </>
                 )}
               </Pressable>
@@ -361,7 +364,7 @@ function PasswordField({
   return (
     <View>
       <Text className="text-white/40 text-xs mb-1.5">{label}</Text>
-      <View className="flex-row items-center bg-[#0A0E16] rounded-xl border border-white/10">
+      <View className="flex-row items-center bg-dark-bg rounded-xl border border-white/10 focus-within:border-primary/50 shadow-sm">
         <TextInput
           value={value}
           onChangeText={onChangeText}
@@ -427,7 +430,7 @@ function PasswordTab() {
         <Text className="text-orange-500 text-xs font-black tracking-widest uppercase">Change Password</Text>
       </View>
 
-      <View className="bg-[#111623] border border-white/5 rounded-2xl px-5 py-5 gap-4">
+      <View className="bg-dark-surface border border-white/5 rounded-2xl px-5 py-5 gap-4 shadow-sm">
         <PasswordField
           label="Current password"
           value={currentPassword}
@@ -456,9 +459,9 @@ function PasswordTab() {
           className={`bg-orange-500 active:bg-orange-600 rounded-xl py-3.5 items-center mt-1 ${saving ? 'opacity-50' : ''}`}
         >
           {saving ? (
-            <ActivityIndicator size="small" color="#0A0E16" />
+            <ActivityIndicator size="small" color="#0F172A" />
           ) : (
-            <Text className="text-[#0A0E16] text-sm font-black">Update Password</Text>
+            <Text className="text-[#0F172A] text-sm font-black tracking-wide">Update Password</Text>
           )}
         </Pressable>
       </View>
@@ -488,7 +491,10 @@ export default function AdminDashboard() {
     setError('')
     try {
       const adminId = await SecureStore.getItemAsync('adminId')
-      if (!adminId) return
+      if (!adminId) {
+        router.replace('/organisers?tab=admin')
+        return
+      }
       const data = await getEventsByAdmin(Number(adminId))
       setEvents(data.events ?? data)
     } catch (err: any) {
@@ -511,16 +517,19 @@ export default function AdminDashboard() {
   ]
 
   return (
-    <View className="flex-1 bg-[#0A0E16]">
+    <View className="flex-1 bg-dark-bg">
       {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
         <View className="flex-row items-center justify-between mb-6">
           <Pressable
-            onPress={() => router.push('/organisers')}
+            onPress={async () => {
+              await SecureStore.deleteItemAsync('adminId')
+              router.back()
+            }}
             className="flex-row items-center gap-1 active:opacity-60"
           >
             <ChevronLeft size={16} color="rgba(255,255,255,0.4)" />
-            <Text className="text-white/40 text-sm font-semibold">Back</Text>
+            <Text className="text-white/40 text-sm font-semibold">Logout</Text>
           </Pressable>
 
           {activeTab === 'events' && (
@@ -528,7 +537,7 @@ export default function AdminDashboard() {
               onPress={() => router.push('/CreateEventPanel')}
               className="w-10 h-10 rounded-xl bg-orange-500 active:bg-orange-600 items-center justify-center"
             >
-              <Plus size={20} color="#0A0E16" />
+              <Plus size={20} color="#0F172A" />
             </Pressable>
           )}
         </View>
@@ -550,7 +559,7 @@ export default function AdminDashboard() {
               className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === tab.key ? 'bg-orange-500' : 'bg-white/5'}`}
             >
               <Text
-                className={`text-xs font-black ${activeTab === tab.key ? 'text-[#0A0E16]' : 'text-white/40'}`}
+                className={`text-xs font-black tracking-wide ${activeTab === tab.key ? 'text-[#0F172A]' : 'text-white/40'}`}
               >
                 {tab.label}
               </Text>
