@@ -1,6 +1,7 @@
 import React from 'react'
 import { View, Text, Pressable, TextInput, ScrollView, Linking } from 'react-native'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useFocusEffect } from '@react-navigation/native'
 import * as WebBrowser from 'expo-web-browser'
 import { useRouter } from 'expo-router'
 import * as SecureStore from "expo-secure-store"
@@ -34,6 +35,7 @@ import {
   ChevronDown,
   Cpu,
   X,
+  History,
 } from 'lucide-react-native'
 import ViewShot, { captureRef } from 'react-native-view-shot'
 import { AI_DIRECTOR_URL } from '../envdata'
@@ -50,8 +52,21 @@ import {
   setMatchLiveSelection,
   getYoutubeAuthUrl,
   stopYoutubeStream,
+  FinalScore,
 } from './services/match'
+import { getEventById } from './services/event'
 import EventIdGate from './Eventidgate'
+
+type PastMatch = {
+  id: string
+  sport: string
+  name: string
+  teamAName: string
+  teamBName: string
+  teamAScore: number
+  teamBScore: number
+  recordings?: { id: string; recordingUrl: string }[]
+}
 
 type TabKey = 'capturer' | 'commentator' | 'broadcaster' | 'admin'
 
@@ -98,7 +113,7 @@ function CapturerPanel({ onLiveChange }: { onLiveChange?: (isLive: boolean) => v
 
   return (
     <View className="flex-1 bg-dark-bg">
-      <View className="bg-dark-surface border-b border-dark-border px-6 pt-6 pb-6 shadow-sm">
+      <View className="bg-dark-surface border-b border-dark-border px-6 pt-14 pb-6 shadow-sm">
         <Pressable
           onPress={() => setEventId(null)}
           className="flex-row items-center gap-1.5 mb-4 self-start active:opacity-60"
@@ -753,6 +768,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
   const eventSport: Sport = (eventInfo?.sport as Sport) ?? 'badminton'
   const isSportsEvent = (eventInfo?.category ?? 'sports') === 'sports'
   const [matches, setMatches] = useState<MatchState[]>([])
+  const [pastMatches, setPastMatches] = useState<PastMatch[]>([])
+  const [showHistory, setShowHistory] = useState(false)
   const [assigningMatchId, setAssigningMatchId] = useState<string | null>(null)
   const [roster, setRoster] = useState<{ capturers: RosterParticipant[]; commentators: RosterParticipant[]; viewerCount: number }>({
     capturers: [],
@@ -774,6 +791,8 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
 
   const refreshMatches = async () => {
     if (!eventId) return
+    
+    // Fetch live/upcoming matches
     const serverMatches = await listMatches(eventId, false)
     setMatches(prev =>
       serverMatches.map(sm => {
@@ -796,6 +815,24 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
         }
       }),
     )
+
+    // Fetch past matches (history)
+    try {
+      const eventData = await getEventById(eventId)
+      const histories = eventData.event?.matchHistories ?? []
+      setPastMatches(histories.map((h: any) => ({
+        id: h.matchId ?? h.id,
+        sport: h.sport,
+        name: h.name,
+        teamAName: h.teamAName,
+        teamBName: h.teamBName,
+        teamAScore: h.teamAScore,
+        teamBScore: h.teamBScore,
+        recordings: h.match?.recordings ?? [],
+      })))
+    } catch (err) {
+      console.warn("Could not fetch match history", err)
+    }
   }
 
   useEffect(() => {
@@ -1063,8 +1100,18 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
     const match = matches.find(m => m.id === id)
     if (!match) return
     const { nameA, nameB } = getNames(match)
-    const teamAScore = match.sport === 'football' ? match.footballScore?.goalsA ?? 0 : match.racketScore?.gamesA ?? 0
-    const teamBScore = match.sport === 'football' ? match.footballScore?.goalsB ?? 0 : match.racketScore?.gamesB ?? 0
+    
+    let teamAScore = match.sport === 'football' ? match.footballScore?.goalsA ?? 0 : match.racketScore?.gamesA ?? 0
+    let teamBScore = match.sport === 'football' ? match.footballScore?.goalsB ?? 0 : match.racketScore?.gamesB ?? 0
+
+    // Tie-breaker logic: artificially bump the winner's score so the backend registers them mathematically.
+    if (teamAScore === teamBScore) {
+      if (side === 'A') teamAScore += 1
+      else teamBScore += 1
+    } else {
+      if (side === 'A' && teamAScore < teamBScore) teamAScore = teamBScore + 1
+      if (side === 'B' && teamBScore < teamAScore) teamBScore = teamAScore + 1
+    }
 
     updateMatch(id, m => ({ ...m, winner: side }))
 
@@ -1081,6 +1128,7 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
         ytWhipUrl: updated.ytWhipUrl,
         ytLiveUrl: updated.ytLiveUrl,
       }))
+      refreshMatches()
     } catch (err: any) {
       setJoinError(err.response?.data?.message ?? 'Could not end match.')
     }
@@ -1339,6 +1387,38 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
         {isJoined && isSportsEvent && (
           <View className="px-6 mt-6 pb-6 gap-4">
 
+            <View className="mb-2">
+              <Pressable 
+                onPress={() => setShowHistory(!showHistory)}
+                  className="flex-row items-center justify-between bg-gray-100 px-4 py-3 rounded-xl active:bg-gray-200"
+                >
+                  <View className="flex-row items-center gap-2">
+                    <History size={16} color="#4b5563" />
+                    <Text className="text-gray-700 font-bold text-sm">View Match History ({pastMatches.length})</Text>
+                  </View>
+                  <ChevronDown size={18} color="#4b5563" style={{ transform: [{ rotate: showHistory ? '180deg' : '0deg' }] }} />
+                </Pressable>
+
+                {showHistory && (
+                  <View className="gap-3 mt-3">
+                    {pastMatches.map(pm => {
+                      const winner = pm.teamAScore > pm.teamBScore ? pm.teamAName : pm.teamBScore > pm.teamAScore ? pm.teamBName : 'Tie'
+                      return (
+                        <View key={pm.id} className="border border-gray-100 bg-gray-50 rounded-lg p-3 flex-row items-center justify-between">
+                          <View>
+                            <Text className="text-gray-900 font-bold text-sm">{pm.name}</Text>
+                            <Text className="text-gray-500 text-xs mt-0.5 capitalize">{pm.sport}</Text>
+                          </View>
+                          <View className="bg-amber-100 px-3 py-1.5 rounded-lg flex-row items-center gap-1.5 border border-amber-200">
+                            <Trophy size={14} color="#b45309" />
+                            <Text className="text-amber-900 font-bold text-xs">{winner} won</Text>
+                          </View>
+                        </View>
+                      )
+                    })}
+                  </View>
+                )}
+              </View>
             {matches.length === 0 ? (
               <Text className="text-center text-gray-400 text-sm mt-2">
                 No matches yet. Click <Text className="font-bold text-gray-600">Add match</Text> to create one.
@@ -1402,17 +1482,17 @@ function BroadcasterPanel({ onJoinChange }: { onJoinChange?: (isJoined: boolean)
                         >
                           <Text className="text-gray-500 text-xs font-medium">Clear live</Text>
                         </Pressable>
-                        <Pressable
-                          onPress={() => removeMatch(match.id)}
-                          className="border border-gray-200 rounded-lg px-3 py-2 flex-row items-center gap-1.5"
-                        >
-                          <Trash2 size={14} color="#111" />
-                          <Text className="text-black text-xs font-medium">Remove</Text>
-                        </Pressable>
+                          <Pressable
+                            onPress={() => removeMatch(match.id)}
+                            className="border border-gray-200 rounded-lg px-3 py-2 flex-row items-center gap-1.5"
+                          >
+                            <Trash2 size={14} color="#111" />
+                            <Text className="text-black text-xs font-medium">Remove</Text>
+                          </Pressable>
+                        </View>
                       </View>
-                    </View>
 
-                    {/* Per-match participant counts */}
+                      {/* Per-match participant counts */}
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
                         <Video size={12} color="#2563eb" />
@@ -2553,6 +2633,14 @@ function AdminPanel() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false);
 
+  useFocusEffect(
+    useCallback(() => {
+      setEmail('')
+      setPassword('')
+      setError('')
+    }, [])
+  )
+
 
     const handleSignIn = async () => {
     if (!email || !password) {
@@ -2586,8 +2674,8 @@ function AdminPanel() {
   };
 
   return (
-    <View>
-      <View className="bg-emerald-900 px-6 pt-6 pb-6">
+    <View className="flex-1 bg-slate-950">
+      <View className="bg-emerald-900 px-6 pt-14 pb-6">
         <View className="flex-row items-center gap-3 mb-1">
           <View className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 items-center justify-center">
             <ShieldCheck size={20} color="#fb923c" />
@@ -2595,7 +2683,7 @@ function AdminPanel() {
           <Text className="text-white text-3xl font-black">Admin</Text>
         </View>
         <Text className="text-white/50 text-sm ml-1 mt-1">
-          Manage organisers and event configuration — restricted access.
+          Manage events and access controls.
         </Text>
       </View>
 

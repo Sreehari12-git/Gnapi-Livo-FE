@@ -1,5 +1,6 @@
 import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { useFocusEffect } from '@react-navigation/native'
 import { Link, useRouter, type Href } from 'expo-router'
 import { Search, Circle, History, Trophy, X, Eye, ShieldCheck, Mail, Lock, EyeOff, ArrowRight, Play } from 'lucide-react-native'
 import * as SecureStore from 'expo-secure-store'
@@ -462,6 +463,14 @@ function ControlPanelScreen() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useFocusEffect(
+    useCallback(() => {
+      setEmail('')
+      setPassword('')
+      setError(null)
+    }, [])
+  )
 
   const validate = () => {
     if (!email.trim() || !password.trim()) return 'Enter your email and password.'

@@ -1,5 +1,5 @@
-import { View, Text, Pressable, FlatList, ActivityIndicator, TextInput, Alert, ScrollView } from 'react-native'
-import { useState, useCallback } from 'react'
+import { View, Text, Pressable, FlatList, ActivityIndicator, TextInput, Alert, ScrollView, BackHandler } from 'react-native'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import * as Clipboard from 'expo-clipboard'
@@ -486,6 +486,17 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    const onBackPress = () => {
+      SecureStore.deleteItemAsync('adminId').then(() => {
+        router.replace('/organisers?tab=admin')
+      })
+      return true
+    }
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress)
+    return () => subscription.remove()
+  }, [router])
+
   const loadEvents = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -520,7 +531,7 @@ export default function AdminDashboard() {
     <View className="flex-1 bg-dark-bg">
       {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
-        <View className="flex-row items-center justify-between mb-6">
+        <View className="flex-row items-center justify-between mb-6 min-h-[40px]">
           <Pressable
             onPress={async () => {
               await SecureStore.deleteItemAsync('adminId')
